@@ -17,14 +17,31 @@ JNI="$MAIN/jniLibs"
 WORK="${WORK:-$ROOT/build/android}"
 mkdir -p "$JNI" "$WORK"
 
-# --- lyrebird (исходники Tor Project) ---
-LYRE="$WORK/lyrebird"
-if [ ! -d "$LYRE/.git" ]; then
-  git clone -q https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird.git "$LYRE"
+# --- lyrebird (транспорты Tor) ---
+# gitlab.torproject.org часто недоступен с серверов GitHub, поэтому основной источник —
+# зеркало Go-модулей proxy.golang.org (хранит копии модулей Tor Project).
+LYRE_MOD="gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird"
+LYRE=""
+if J=$(cd "$WORK" && GOFLAGS= go mod download -json "$LYRE_MOD@${LYREBIRD_VERSION:-latest}"); then
+  SRC=$(echo "$J" | sed -n 's/.*"Dir": *"\(.*\)".*/\1/p' | head -1)
+  if [ -n "$SRC" ] && [ -d "$SRC" ]; then
+    # Кэш модулей только для чтения — собираем из копии.
+    rm -rf "$WORK/lyrebird-src" && cp -r "$SRC" "$WORK/lyrebird-src" && chmod -R u+w "$WORK/lyrebird-src"
+    LYRE="$WORK/lyrebird-src"
+    echo "lyrebird из proxy.golang.org: $(echo "$J" | sed -n 's/.*"Version": *"\(.*\)".*/\1/p' | head -1)"
+  fi
 fi
-TAG=$(git -C "$LYRE" tag --sort=-v:refname | grep -E '^lyrebird-[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
-[ -n "$TAG" ] && git -C "$LYRE" checkout -q "$TAG"
-echo "lyrebird: ${TAG:-$(git -C "$LYRE" rev-parse --short HEAD)}"
+if [ -z "$LYRE" ] || [ ! -d "$LYRE/cmd/lyrebird" ]; then
+  echo "proxy.golang.org не помог, пробую gitlab.torproject.org"
+  LYRE="$WORK/lyrebird"
+  if [ ! -d "$LYRE/.git" ] && ! git clone -q https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird.git "$LYRE"; then
+    LYRE=""
+  else
+    TAG=$(git -C "$LYRE" tag --sort=-v:refname | grep -E '^lyrebird-[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+    [ -n "$TAG" ] && git -C "$LYRE" checkout -q "$TAG"
+    echo "lyrebird из gitlab: ${TAG:-$(git -C "$LYRE" rev-parse --short HEAD)}"
+  fi
+fi
 
 LDX="-s -w -extldflags=-Wl,-z,max-page-size=16384"
 for abi in armeabi-v7a arm64-v8a x86 x86_64; do
@@ -38,9 +55,11 @@ for abi in armeabi-v7a arm64-v8a x86 x86_64; do
   echo "==> $abi: ядро"
   (cd "$ROOT/core" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" \
      go build -trimpath -ldflags "$LDX -X main.appVersion=$VERSION" -o "$JNI/$abi/libobhod.so" .)
-  echo "==> $abi: lyrebird"
-  (cd "$LYRE" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" \
-     go build -trimpath -ldflags "$LDX" -o "$JNI/$abi/liblyrebird.so" ./cmd/lyrebird)
+  if [ -n "$LYRE" ]; then
+    echo "==> $abi: lyrebird"
+    (cd "$LYRE" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" GOFLAGS=-mod=mod \
+       go build -trimpath -ldflags "$LDX" -o "$JNI/$abi/liblyrebird.so" ./cmd/lyrebird)
+  fi
 done
 
 # --- hev-socks5-tunnel 2.13.0 (последняя версия с mapdns и поддержкой API < 29) ---
@@ -58,13 +77,30 @@ echo "==> hev-socks5-tunnel (ndk-build)"
 (cd "$MAIN" && "$NDK/ndk-build" -j"$(nproc)" NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk \
    NDK_APPLICATION_MK=jni/Application.mk NDK_LIBS_OUT=jniLibs NDK_OUT="$WORK/ndk-obj")
 
+# Запасной вариант: готовый lyrebird из Android-сборки Tor (dist.torproject.org).
+if [ -z "$LYRE" ]; then
+  echo "Исходники lyrebird недоступны — беру готовые файлы из Tor Expert Bundle для Android"
+  for pair in arm64-v8a:android-aarch64 armeabi-v7a:android-armv7 x86_64:android-x86_64; do
+    abi=${pair%%:*}; plat=${pair#*:}
+    if bash "$ROOT/scripts/fetch-tor.sh" "$plat" "$WORK/teb-$abi" >/dev/null 2>&1; then
+      f=$(find "$WORK/teb-$abi" -type f -iname '*lyrebird*' | head -1 || true)
+      [ -n "$f" ] && cp "$f" "$JNI/$abi/liblyrebird.so" && echo "  $abi: $(basename "$f")"
+    fi
+  done
+fi
+
 # В APK должны попасть только lib*.so (ndk-build может положить и исполняемый файл).
 find "$JNI" -type f ! -name 'lib*.so' -delete
 
 echo "Готово:"
 find "$JNI" -type f -name '*.so' -exec ls -la {} \;
 for abi in armeabi-v7a arm64-v8a x86 x86_64; do
-  for f in libobhod.so liblyrebird.so libhev-socks5-tunnel.so; do
+  for f in libobhod.so libhev-socks5-tunnel.so; do
     [ -s "$JNI/$abi/$f" ] || { echo "Нет $abi/$f"; exit 1; }
   done
+  if [ ! -s "$JNI/$abi/liblyrebird.so" ]; then
+    # Без lyrebird на этой архитектуре Tor работает только без мостов — не повод ронять сборку.
+    [ "$abi" = x86 ] && { echo "ВНИМАНИЕ: нет lyrebird для x86"; continue; }
+    echo "Нет $abi/liblyrebird.so"; exit 1
+  fi
 done
