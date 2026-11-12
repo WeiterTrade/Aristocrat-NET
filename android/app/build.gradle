@@ -13,6 +13,7 @@ def hasReleaseKey = ksFile != null && file(ksFile).exists()
 android {
     namespace 'org.obhod.app'
     compileSdk 34
+    ndkVersion '27.2.12479018'
 
     defaultConfig {
         applicationId 'org.obhod.app'

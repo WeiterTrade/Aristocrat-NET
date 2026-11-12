@@ -8,7 +8,8 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSION="${1:-$(cat "$ROOT/VERSION")}"
-NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
+# Предпочитаем закреплённый NDK (CI ставит r27), а не самый новый.
+NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_LATEST_HOME:-}}}"
 [ -d "$NDK" ] || { echo "Не найден Android NDK (ANDROID_NDK_HOME)"; exit 1; }
 TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 API=24
@@ -75,6 +76,12 @@ if ! grep -q 'shdr->ar = 0;' "$HEV/src/hev-mapped-dns.c"; then
   sed -i 's/^\(\s*\)shdr->an = 0;/&\n\1shdr->ar = 0;/' "$HEV/src/hev-mapped-dns.c"
   grep -q 'shdr->ar = 0;' "$HEV/src/hev-mapped-dns.c" || { echo "не удалось применить патч mapdns"; exit 1; }
 fi
+# NDK r28+ раскрывает макрос errno внутри «#include LWIP_ERRNO_INCLUDE» → <(*__errno()).h>.
+LWERR="$HEV/third-part/lwip/src/include/lwip/errno.h"
+if grep -q '^#include LWIP_ERRNO_INCLUDE$' "$LWERR"; then
+  sed -i 's|^#include LWIP_ERRNO_INCLUDE$|#include <errno.h> /* obhod: обход раскрытия errno в NDK r28+ */|' "$LWERR"
+fi
+echo "NDK: $NDK"
 echo "==> hev-socks5-tunnel (ndk-build)"
 (cd "$MAIN" && "$NDK/ndk-build" -j"$(nproc)" NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk \
    NDK_APPLICATION_MK=jni/Application.mk NDK_LIBS_OUT=jniLibs NDK_OUT="$WORK/ndk-obj")
