@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -259,6 +260,14 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
 		_, _ = w.Write(indexHTML)
 	})
+	// /ping — чтобы повторно запущенная копия узнала, что «Обход» уже работает.
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != a.addr {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("obhod"))
+	})
 	mux.HandleFunc("/api/state", a.guard(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, a.state()) }))
 	mux.HandleFunc("/api/logs", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
@@ -465,13 +474,28 @@ func main() {
 		return
 	}
 
+	// Одна копия программы: если «Обход» уже запущен (окно просто закрыли, а он работает в фоне),
+	// открываем его окно и выходим, вместо того чтобы запускать вторую копию.
+	tokenFile := filepath.Join(a.dir, "ui-token")
+	if url, ok := runningInstance(*uiPort, tokenFile); ok {
+		fmt.Println("«Обход» уже запущен:", url)
+		if !*noBrowser {
+			openWindow(url)
+		}
+		return
+	}
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *uiPort))
+	fixedPort := err == nil
 	if err != nil {
 		if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
 			log.Fatal(err)
 		}
 	}
 	a.addr = ln.Addr().String()
+	if fixedPort {
+		_ = os.MkdirAll(a.dir, 0o700)
+		_ = os.WriteFile(tokenFile, []byte(a.token), 0o600)
+	}
 	srv = &http.Server{ReadHeaderTimeout: 10 * time.Second}
 	mux := http.NewServeMux()
 	a.routes(mux, shutdown)
@@ -494,6 +518,27 @@ func main() {
 		log.Println(err)
 	}
 	shutdown()
+}
+
+// runningInstance проверяет, работает ли уже «Обход» на порту интерфейса, и возвращает адрес его окна.
+func runningInstance(uiPort int, tokenFile string) (string, bool) {
+	addr := fmt.Sprintf("127.0.0.1:%d", uiPort)
+	cl := &http.Client{Timeout: 1500 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	resp, err := cl.Get("http://" + addr + "/ping")
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	b := make([]byte, 16)
+	n, _ := resp.Body.Read(b)
+	if string(b[:n]) != "obhod" {
+		return "", false
+	}
+	tok, err := os.ReadFile(tokenFile)
+	if err != nil || len(tok) == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("http://%s/#%s", addr, strings.TrimSpace(string(tok))), true
 }
 
 func fileExists(p string) bool { st, err := os.Stat(p); return err == nil && !st.IsDir() }

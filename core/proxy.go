@@ -106,7 +106,9 @@ func (e *Engine) Start(port int) error {
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
-		return fmt.Errorf("порт %d занят: %w", port, err)
+		return fmt.Errorf("порт %d уже занят — скорее всего, запущена ещё одна копия «Обхода» "+
+			"(закройте её кнопкой «Выход» или завершите Obhod.exe в Диспетчере задач) либо другая программа; "+
+			"можно сменить порт в настройках", port)
 	}
 	e.ln, e.selfPt = ln, port
 	go func() {

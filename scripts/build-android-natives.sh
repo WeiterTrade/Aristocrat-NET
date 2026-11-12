@@ -44,6 +44,8 @@ if [ -z "$LYRE" ] || [ ! -d "$LYRE/cmd/lyrebird" ]; then
 fi
 
 LDX="-s -w -extldflags=-Wl,-z,max-page-size=16384"
+# -checklinkname=0 нужен lyrebird: его зависимость github.com/wlynxg/anet (для Android)
+# обращается к net.zoneCache через go:linkname, что Go 1.23+ по умолчанию запрещает.
 for abi in armeabi-v7a arm64-v8a x86 x86_64; do
   case "$abi" in
     armeabi-v7a) GA=arm   CC="$TC/armv7a-linux-androideabi$API-clang" ;;
@@ -58,7 +60,7 @@ for abi in armeabi-v7a arm64-v8a x86 x86_64; do
   if [ -n "$LYRE" ]; then
     echo "==> $abi: lyrebird"
     (cd "$LYRE" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" GOFLAGS=-mod=mod \
-       go build -trimpath -ldflags "$LDX" -o "$JNI/$abi/liblyrebird.so" ./cmd/lyrebird)
+       go build -trimpath -ldflags "$LDX -checklinkname=0" -o "$JNI/$abi/liblyrebird.so" ./cmd/lyrebird)
   fi
 done
 
