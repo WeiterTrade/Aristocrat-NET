@@ -167,6 +167,12 @@ jobs:
           bash scripts/fetch-tor.sh android-aarch64 build/tor-android || bash scripts/fetch-tor.sh linux-x86_64 build/tor-android
           mkdir -p android/app/src/main/assets
           cp build/tor-android/pt/pt_config.json android/app/src/main/assets/
+      - name: Android NDK r27 (с ним проверен hev-socks5-tunnel)
+        run: |
+          NDKV=27.2.12479018
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -d "$ANDROID_HOME/ndk/$NDKV" ] || (yes | "$SDKM" --install "ndk;$NDKV" > /dev/null)
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDKV" >> "$GITHUB_ENV"
       - name: Нативные части (ядро, lyrebird, hev-socks5-tunnel)
         run: bash scripts/build-android-natives.sh "$V"
       - name: Ключ подписи (если задан в секретах)
