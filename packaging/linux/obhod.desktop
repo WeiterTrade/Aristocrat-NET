@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Обход
+Name[en]=Obhod
+GenericName=Обход блокировок
+Comment=Обход DPI и Tor для заблокированных сайтов
+Exec=/opt/obhod/obhod
+Icon=obhod
+Terminal=false
+Categories=Network;
+Keywords=vpn;proxy;tor;dpi;

@@ -1,0 +1,38 @@
+# Сборка (из корня репозитория, файлы в build/linux): VERSION=1.0.0 nfpm package -f packaging/linux/nfpm.yaml -p deb|rpm -t dist/
+name: obhod
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: 1
+section: net
+priority: optional
+maintainer: Obhod <obhod@users.noreply.github.com>
+description: |
+  Обход блокировок без VPN-подписок: локальный обход DPI (дробление TLS,
+  disorder, DoH), а для сайтов, заблокированных по IP, — автоматически Tor
+  с мостами (snowflake, webtunnel, obfs4).
+homepage: https://github.com/
+license: MIT
+recommends:
+  - xdg-utils
+
+contents:
+  - src: build/linux/obhod
+    dst: /opt/obhod/obhod
+    file_info:
+      mode: 0755
+  - src: build/linux/tor
+    dst: /opt/obhod/tor
+    type: tree
+  - src: /opt/obhod/obhod
+    dst: /usr/bin/obhod
+    type: symlink
+  - src: packaging/linux/obhod.desktop
+    dst: /usr/share/applications/obhod.desktop
+  - src: assets/icon-256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/obhod.png
+  - src: README.md
+    dst: /usr/share/doc/obhod/README.md
+
+scripts:
+  postinstall: packaging/linux/postinstall.sh

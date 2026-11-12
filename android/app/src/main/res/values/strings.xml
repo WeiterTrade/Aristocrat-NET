@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Обход</string>
+    <string name="connect">Включить</string>
+    <string name="disconnect">Выключить</string>
+    <string name="status_off">Выключено</string>
+    <string name="status_starting">Запуск…</string>
+    <string name="status_on">Обход включён</string>
+    <string name="route_label">Маршрут</string>
+    <string name="bridges_label">Мосты Tor</string>
+    <string name="custom_hint">Свои мосты (obfs4 / webtunnel), по одной строке. Получить: Telegram-бот @GetBridgesBot</string>
+    <string name="save">Сохранить</string>
+    <string name="log_label">Журнал</string>
+    <string name="notif_channel">Работа VPN</string>
+    <string name="notif_text">Обход блокировок включён</string>
+    <string name="hint">Сначала соединение идёт напрямую с обходом DPI. Если сайт заблокирован по IP или обход не помог — автоматически через Tor. Сайт запоминается.</string>
+    <string-array name="route_names">
+        <item>Авто: обход DPI, при блокировке — Tor</item>
+        <item>Только обход DPI</item>
+        <item>Всё через Tor</item>
+    </string-array>
+    <string-array name="route_values">
+        <item>auto</item>
+        <item>dpi</item>
+        <item>tor</item>
+    </string-array>
+    <string-array name="bridge_names">
+        <item>Snowflake (рекомендуется)</item>
+        <item>WebTunnel</item>
+        <item>obfs4</item>
+        <item>meek (Azure)</item>
+        <item>Свои мосты</item>
+        <item>Без мостов</item>
+    </string-array>
+    <string-array name="bridge_values">
+        <item>snowflake</item>
+        <item>webtunnel</item>
+        <item>obfs4</item>
+        <item>meek</item>
+        <item>custom</item>
+        <item>none</item>
+    </string-array>
+</resources>

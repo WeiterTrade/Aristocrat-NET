@@ -1,0 +1,75 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Версия задаётся из CI: -PappVersion=1.2.3 -PappVersionCode=42
+def appVersion = project.findProperty('appVersion') ?: '0.3.0'
+def appVersionCode = (project.findProperty('appVersionCode') ?: '1').toInteger()
+
+// Подпись: если в CI заданы секреты — release-ключом, иначе debug-ключом (APK всё равно устанавливается).
+def ksFile = System.getenv('ANDROID_KEYSTORE_FILE')
+def hasReleaseKey = ksFile != null && file(ksFile).exists()
+
+android {
+    namespace 'org.obhod.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'org.obhod.app'
+        minSdk 24          // требование tor-android
+        targetSdk 34
+        versionCode appVersionCode
+        versionName appVersion
+        // Архитектуры задаются в splits ниже (abiFilters здесь вызвал бы конфликт).
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(ksFile)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    // Отдельные APK под архитектуры + универсальный
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            universalApk true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    packaging {
+        jniLibs {
+            // Ядро и lyrebird — исполняемые файлы под видом .so: их нужно распаковать на диск.
+            useLegacyPackaging true
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation 'info.guardianproject:tor-android:0.4.8.18'
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
+}

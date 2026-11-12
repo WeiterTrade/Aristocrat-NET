@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:Theme.DeviceDefault">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorAccent">@color/accent</item>
+    </style>
+    <color name="bg">#0F1216</color>
+    <color name="card">#171B21</color>
+    <color name="accent">#34C77B</color>
+    <color name="muted">#98A1AD</color>
+    <color name="off">#59616D</color>
+</resources>
