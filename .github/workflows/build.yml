@@ -77,8 +77,8 @@ jobs:
       - name: Зависимости Go (go.sum)
         working-directory: core
         run: go mod tidy
-      - name: Инструменты (NSIS, windres)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis binutils-mingw-w64-i686 zip
+      - name: Инструменты (NSIS, windres + mingw-gcc для препроцессора ресурсов)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis binutils-mingw-w64-i686 gcc-mingw-w64-i686 zip
       - name: Иконка и манифест программы
         working-directory: core
         run: |
