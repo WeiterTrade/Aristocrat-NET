@@ -10,112 +10,161 @@
   @media (prefers-color-scheme: dark) {
     :root { --bg:#0f1216; --card:#171b21; --text:#e8ebef; --muted:#98a1ad; --line:#262c35;
             --accent:#5b8ff9; --ok:#34c77b; --warn:#f97316; --off:#59616d; } }
-  * { box-sizing: border-box; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
   body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
-  main { max-width:460px; margin:0 auto; padding:18px 16px 28px; }
-  header { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
-  h1 { font-size:17px; margin:0; }
-  .ver { color:var(--muted); font-size:12px; }
+  .hidden { display:none !important; }
+
+  /* ---- Главный экран ---- */
+  #home { position:relative; height:100vh; max-width:460px; margin:0 auto; display:flex; flex-direction:column;
+          align-items:center; justify-content:center; padding:24px; text-align:center; }
+  .about-link { position:absolute; top:16px; right:18px; background:none; border:0; color:var(--muted);
+                font:inherit; cursor:pointer; padding:6px 8px; border-radius:8px; }
+  .about-link:hover, .about-link:focus-visible { color:var(--text); background:var(--line); }
+  .gear { position:absolute; bottom:18px; left:18px; width:52px; height:52px; border-radius:50%; border:1px solid var(--line);
+          background:var(--card); color:var(--muted); font-size:26px; line-height:1; cursor:pointer; }
+  .gear:hover, .gear:focus-visible { color:var(--text); border-color:var(--muted); }
+  .power { width:190px; height:190px; border-radius:50%; border:0; cursor:pointer; background:var(--off); color:#fff;
+           font:600 19px system-ui,sans-serif; transition:.25s;
+           box-shadow:0 0 0 14px color-mix(in srgb,var(--off) 14%,transparent); }
+  .power.on { background:var(--ok); box-shadow:0 0 0 14px color-mix(in srgb,var(--ok) 18%,transparent); }
+  .power.busy { background:var(--accent); animation:pulse 1.2s infinite; }
+  .power:focus-visible { outline:3px solid var(--text); outline-offset:8px; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 22px color-mix(in srgb,var(--accent) 10%,transparent); } }
+  .state { margin-top:34px; font-size:18px; font-weight:600; }
+  .state.on { color:var(--ok); }
+  .sub { color:var(--muted); font-size:13px; margin-top:4px; min-height:19px; }
+  .ip { margin-top:18px; font-size:15px; }
+  .ip b { font-family:ui-monospace,Consolas,monospace; font-weight:600; }
+  .err { color:var(--warn); font-size:13px; margin-top:10px; white-space:pre-wrap; max-width:380px; }
+  .bar { height:4px; background:var(--line); border-radius:4px; margin:8px auto 0; width:200px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--accent); }
+
+  /* ---- Настройки ---- */
+  #settings { max-width:460px; margin:0 auto; padding:14px 16px 28px; }
+  .top { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .back { background:none; border:0; color:var(--text); font-size:22px; cursor:pointer; padding:4px 10px; border-radius:8px; }
+  .back:hover { background:var(--line); }
+  h1 { font-size:18px; margin:0; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:12px; }
-  .hero { text-align:center; padding:24px 16px 20px; }
-  .power { width:128px; height:128px; border-radius:50%; border:0; cursor:pointer; background:var(--off); color:#fff;
-           font:600 15px system-ui,sans-serif; box-shadow:0 0 0 10px color-mix(in srgb,var(--off) 15%,transparent); transition:.2s; }
-  .power.on { background:var(--ok); box-shadow:0 0 0 10px color-mix(in srgb,var(--ok) 18%,transparent); }
-  .status { margin-top:16px; font-weight:600; }
-  .sub { color:var(--muted); font-size:13px; margin-top:2px; }
-  .err { color:var(--warn); font-size:13px; margin-top:8px; white-space:pre-wrap; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin:0 0 10px; font-weight:600; }
-  input[type=text], input[type=number], select { border:1px solid var(--line); border-radius:10px; padding:9px 10px;
+  input[type=text], input[type=number], select, textarea { border:1px solid var(--line); border-radius:10px; padding:9px 10px;
            background:var(--bg); color:var(--text); font:inherit; }
-  input[type=text] { width:100%; }
+  input[type=text], textarea { width:100%; }
+  textarea { font:12px ui-monospace,Consolas,monospace; }
   .btn { border:0; border-radius:10px; padding:9px 14px; font:inherit; font-weight:600; cursor:pointer; background:var(--accent); color:#fff; white-space:nowrap; }
   .btn.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
   .btn:disabled { opacity:.6; cursor:default; }
   .row { display:flex; gap:8px; align-items:center; }
+  .opt { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; }
+  .opt .l { flex:1; } .opt.col { flex-direction:column; align-items:stretch; } .opt.col select { width:100%; }
+  .hint { color:var(--muted); font-size:12px; }
   table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
   td { padding:6px 4px; border-top:1px solid var(--line); vertical-align:top; }
   td.r { text-align:right; color:var(--muted); white-space:nowrap; }
   .yes { color:var(--ok); font-weight:600; } .no { color:var(--warn); }
   .info { color:var(--muted); font-size:12px; word-break:break-word; }
   .verdict { margin-top:10px; padding:10px; border-radius:10px; background:var(--bg); font-size:13px; }
-  .opt { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; }
-  .opt .l { flex:1; } .opt.col { flex-direction:column; align-items:stretch; } .opt.col select { width:100%; }
-  textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 10px; background:var(--bg); color:var(--text); font:12px ui-monospace,Consolas,monospace; }
-  .torline { margin-top:10px; font-size:13px; color:var(--muted); }
-  .torline b { color:var(--text); }
-  .bar { height:4px; background:var(--line); border-radius:4px; margin:6px auto 0; max-width:220px; overflow:hidden; }
-  .bar i { display:block; height:100%; background:var(--accent); }
-  .tag.tor { background:color-mix(in srgb,#7d4698 18%,transparent); color:#a46bc4; } .hint { color:var(--muted); font-size:12px; }
   .list { font-size:13px; }
   .list .it { display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--line); }
   .list .it:first-child { border-top:0; }
   .list .h { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
   .tag { font-size:11px; padding:2px 7px; border-radius:20px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); white-space:nowrap; }
   .tag.bad { background:color-mix(in srgb,var(--warn) 12%,transparent); color:var(--warn); }
+  .tag.tor { background:color-mix(in srgb,#7d4698 18%,transparent); color:#a46bc4; }
   .x { border:0; background:none; color:var(--muted); cursor:pointer; font-size:14px; }
   .empty { color:var(--muted); font-size:13px; }
   details summary { cursor:pointer; color:var(--muted); font-size:13px; }
-  pre { max-height:220px; overflow:auto; background:var(--bg); border-radius:10px; padding:10px; font-size:11px; margin:10px 0 0; white-space:pre-wrap; word-break:break-all; }
-  footer { display:flex; justify-content:space-between; gap:8px; }
+  pre { max-height:260px; overflow:auto; background:var(--bg); border-radius:10px; padding:10px; font-size:11px; margin:10px 0 0; white-space:pre-wrap; word-break:break-all; }
+
+  /* ---- О программе ---- */
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; padding:16px; }
+  .modal .card { max-width:380px; width:100%; margin:0; }
+  .modal p { margin:8px 0; font-size:13px; }
 </style>
 </head>
 <body>
-<main>
-  <header><h1>Обход</h1><span class="ver" id="ver"></span></header>
 
-  <section class="card hero">
-    <button class="power" id="power">Включить</button>
-    <div class="status" id="status">Выключено</div>
-    <div class="sub" id="sub"></div>
-    <div class="err" id="err"></div>
-    <div class="torline" id="torline"></div>
-  </section>
+<!-- Главный экран -->
+<section id="home">
+  <button class="about-link" id="aboutBtn">О программе</button>
+  <button class="power" id="power">Включить</button>
+  <div class="state" id="state">Выключено</div>
+  <div class="sub" id="sub"></div>
+  <div class="ip" id="ip">Ваш IP: <b>…</b></div>
+  <div class="err" id="err"></div>
+  <button class="gear" id="gear" title="Настройки" aria-label="Настройки">⚙</button>
+</section>
 
-  <section class="card">
+<!-- Настройки -->
+<section id="settings" class="hidden">
+  <div class="top"><button class="back" id="back" aria-label="Назад">←</button><h1>Настройки</h1></div>
+
+  <div class="card">
+    <h2>Подключение</h2>
+    <div class="opt col"><div class="l">Маршрут</div><select id="route"></select></div>
+    <div class="opt"><div class="l">Метод обхода DPI<br><span class="hint">«Авто» подбирает метод для каждого сайта</span></div>
+      <select id="mode"></select></div>
+    <div id="torBox">
+      <div class="opt"><div class="l">Мосты Tor<br><span class="hint">Как подключаться к Tor (в РФ/РК без мостов он заблокирован)</span></div>
+        <select id="bridges"></select></div>
+      <div id="customBox" class="hidden" style="margin-top:8px">
+        <textarea id="custom" rows="4" spellcheck="false" placeholder="Строки мостов obfs4 или webtunnel, по одной в строке. Получить: Telegram-бот @GetBridgesBot"></textarea>
+        <button class="btn ghost" id="saveCustom" style="margin-top:6px">Сохранить мосты</button>
+      </div>
+      <div class="hint" id="torline" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>Проверить сайт</h2>
     <div class="row">
       <input type="text" id="host" placeholder="например, youtube.com" spellcheck="false">
       <button class="btn" id="test">Проверить</button>
     </div>
     <div id="testOut"></div>
-  </section>
+  </div>
 
-  <section class="card">
-    <h2>Настройки</h2>
-    <div class="opt col"><div class="l">Маршрут</div><select id="route"></select></div>
-    <div class="opt"><div class="l">Метод обхода DPI<br><span class="hint">«Авто» подбирает метод для каждого сайта и запоминает его</span></div>
-      <select id="mode"></select></div>
-    <div id="torBox">
-      <div class="opt"><div class="l">Мосты Tor<br><span class="hint">В России и Казахстане Tor без мостов заблокирован</span></div>
-        <select id="bridges"></select></div>
-      <div id="customBox" style="display:none;margin-top:8px">
-        <textarea id="custom" rows="4" spellcheck="false" placeholder="Строки мостов (obfs4 / webtunnel), по одной в строке. Получить: Telegram-бот @GetBridgesBot или bridges.torproject.org"></textarea>
-        <button class="btn ghost" id="saveCustom" style="margin-top:6px">Сохранить мосты</button>
-      </div>
-    </div>
+  <div class="card">
+    <h2>Сайты</h2>
+    <div class="list" id="sites"></div>
+  </div>
+
+  <div class="card">
+    <h2>Дополнительно</h2>
     <div class="opt"><div class="l">Шифрованный DNS (DoH)</div>
       <select id="doh"><option value="cloudflare">Cloudflare</option><option value="google">Google</option><option value="quad9">Quad9</option></select></div>
     <div class="opt"><label class="l"><input type="checkbox" id="sys"> Системный прокси<br><span class="hint">Иначе укажите в браузере прокси 127.0.0.1:<span id="portLbl"></span> (HTTP или SOCKS5)</span></label></div>
     <div class="opt"><label class="l"><input type="checkbox" id="auto"> Включать при запуске программы</label></div>
     <div class="opt"><div class="l">Порт прокси</div><input type="number" id="port" min="1024" max="65535" style="width:100px"></div>
-  </section>
+  </div>
 
-  <section class="card">
-    <h2>Сайты</h2>
-    <div class="list" id="sites"></div>
-  </section>
-
-  <section class="card">
+  <div class="card">
     <details id="logBox"><summary>Журнал</summary><pre id="logs"></pre></details>
-  </section>
+  </div>
 
-  <footer><span class="hint" id="stats"></span><button class="btn ghost" id="quit">Выход</button></footer>
-</main>
+  <div class="row" style="justify-content:space-between">
+    <span class="hint" id="stats"></span>
+    <button class="btn ghost" id="quit">Выход из программы</button>
+  </div>
+</section>
+
+<!-- О программе -->
+<div class="modal hidden" id="about">
+  <div class="card">
+    <h2>О программе</h2>
+    <p><b>Обход</b> <span id="aboutVer"></span></p>
+    <p>Шифрует DNS и обходит блокировки провайдера прямо на вашем устройстве — без VPN-подписок и своих серверов.</p>
+    <p>Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через сеть Tor.</p>
+    <p class="hint">Используются: Tor, lyrebird (Tor Project), hev-socks5-tunnel. Лицензия MIT.</p>
+    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="aboutClose">Закрыть</button></div>
+  </div>
+</div>
 
 <script>
 const TOKEN = location.hash.slice(1);
 const $ = id => document.getElementById(id);
-let S = null;
+let S = null, busy = false, lastOn = null;
 
 async function api(path, body) {
   const r = await fetch('/api/' + path, {
@@ -128,66 +177,86 @@ async function api(path, body) {
   return j;
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+function fill(id, items) { const el = $(id); if (!el.options.length) items.forEach(x => el.add(new Option(x.name, x.id))); }
+
+function torText(s) {
+  const t = s.tor, st = s.settings;
+  if (!s.on || st.route === 'dpi') return '';
+  if (t.status === 'ready') return 'Tor подключён';
+  if (t.status === 'starting') return 'Tor подключается… ' + t.progress + '%';
+  if (t.error) return t.error;
+  return '';
+}
 
 function render(s) {
   S = s; const st = s.settings;
-  $('ver').textContent = 'v' + s.version;
-  $('power').className = 'power' + (s.on ? ' on' : '');
-  $('power').textContent = s.on ? 'Выключить' : 'Включить';
-  $('status').textContent = s.on ? 'Обход включён' : 'Выключено';
-  $('sub').textContent = s.on ? (st.sys_proxy && !s.proxy_err ? 'Системный прокси 127.0.0.1:' + st.port : 'Прокси 127.0.0.1:' + st.port + ' — укажите его в браузере') : 'Трафик идёт как обычно';
-  $('err').textContent = s.proxy_err || '';
-  const sel = $('mode');
-  if (!sel.options.length) {
-    sel.add(new Option('Авто', 'auto'));
-    s.strategies.forEach(x => sel.add(new Option(x.name, x.id)));
-  }
-  fill('route', s.routes); fill('bridges', s.bridges);
-  $('route').value = st.route; $('bridges').value = st.bridges;
-  $('torBox').style.display = st.route === 'dpi' ? 'none' : '';
-  $('customBox').style.display = st.bridges === 'custom' ? '' : 'none';
+  // главный экран
+  const p = $('power');
+  p.className = 'power' + (busy ? ' busy' : s.on ? ' on' : '');
+  p.textContent = busy ? '…' : s.on ? 'Выключить' : 'Включить';
+  $('state').textContent = s.on ? 'Шифрование включено' : 'Выключено';
+  $('state').className = 'state' + (s.on ? ' on' : '');
+  const route = { auto: 'Обход блокировок + Tor при необходимости', dpi: 'Обход блокировок', tor: 'Весь трафик через Tor' }[st.route];
+  let sub = s.on ? route : 'Трафик идёт как обычно';
+  if (s.on && s.tor.status === 'starting' && st.route !== 'dpi') sub += '<div class="bar"><i style="width:' + s.tor.progress + '%"></i></div>';
+  $('sub').innerHTML = sub;
+  const errs = [s.proxy_err, s.on && st.route !== 'dpi' && s.tor.status === 'error' ? s.tor.error : ''].filter(Boolean);
+  $('err').textContent = errs.join('\n');
+  if (lastOn !== s.on) { lastOn = s.on; loadIP(); }
+
+  // настройки
+  fill('route', s.routes); fill('bridges', s.bridges); fill('mode', [{ id: 'auto', name: 'Авто' }].concat(s.strategies));
+  $('route').value = st.route; $('bridges').value = st.bridges; $('mode').value = st.mode;
+  $('torBox').classList.toggle('hidden', st.route === 'dpi');
+  $('customBox').classList.toggle('hidden', st.bridges !== 'custom');
   if (document.activeElement !== $('custom')) $('custom').value = st.custom_bridges || '';
-  const t = s.tor;
-  let tl = '';
-  if (s.on && st.route !== 'dpi') {
-    if (t.status === 'ready') tl = 'Tor: <b>подключён</b> — запасной путь для заблокированных по IP сайтов';
-    else if (t.status === 'starting') tl = 'Tor: подключается… ' + t.progress + '%<div class="bar"><i style="width:' + t.progress + '%"></i></div>';
-    else if (t.error) tl = 'Tor: <span class="no">' + esc(t.error) + '</span>';
-  }
-  $('torline').innerHTML = tl;
-  sel.value = st.mode; $('doh').value = st.doh; $('sys').checked = st.sys_proxy; $('auto').checked = st.auto_start;
+  $('torline').textContent = torText(s);
+  $('doh').value = st.doh; $('sys').checked = st.sys_proxy; $('auto').checked = st.auto_start;
   if (document.activeElement !== $('port')) $('port').value = st.port;
   $('portLbl').textContent = st.port;
   $('stats').textContent = s.on ? 'Соединений: ' + s.active + ' активных, ' + s.total + ' всего' : '';
+  $('aboutVer').textContent = 'v' + s.version;
 
   let h = '';
   (s.blocked || []).forEach(b => h += `<div class="it"><span class="h" title="${esc(b.reason)}">${esc(b.host)}<br><span class="info">${esc(b.reason)}</span></span><span class="tag bad">не открылся</span><button class="x" data-h="${esc(b.host)}">✕</button></div>`);
   (s.learned || []).forEach(l => h += `<div class="it"><span class="h">${esc(l.host)}</span><span class="tag${l.strategy === 'tor' ? ' tor' : ''}">${esc(l.name)}</span><button class="x" data-h="${esc(l.host)}">✕</button></div>`);
-  $('sites').innerHTML = h || '<div class="empty">Здесь появятся сайты, для которых понадобился особый метод.</div>';
+  $('sites').innerHTML = h || '<div class="empty">Здесь появятся сайты, для которых понадобился особый метод или Tor.</div>';
   $('sites').querySelectorAll('.x').forEach(b => b.onclick = () => api('forget', { host: b.dataset.h }).then(render));
 }
 
-function fill(id, items) {
-  const el = $(id);
-  if (el.options.length) return;
-  items.forEach(x => el.add(new Option(x.name, x.id)));
+async function loadIP() {
+  $('ip').innerHTML = 'Ваш IP: <b>…</b>';
+  try {
+    const r = await api('ip');
+    $('ip').innerHTML = r.ip ? 'Ваш IP: <b>' + esc(r.ip) + '</b>' : 'IP не определён';
+  } catch { $('ip').textContent = 'IP не определён'; }
 }
 
 async function refresh() {
   try { render(await api('state')); } catch (e) { $('err').textContent = e.message; }
-  if ($('logBox').open) try {
+  if (!$('settings').classList.contains('hidden') && $('logBox').open) try {
     const pre = $('logs'), end = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
     pre.textContent = (await api('logs')).join('\n'); if (end) pre.scrollTop = pre.scrollHeight;
   } catch {}
 }
-
 async function save(patch) {
   try { render(await api('settings', Object.assign({}, S.settings, patch))); } catch (e) { $('err').textContent = e.message; }
 }
 
-$('power').onclick = async () => { $('err').textContent = ''; try { render(await api('toggle', {})); } catch (e) { $('err').textContent = e.message; } };
-$('mode').onchange = e => save({ mode: e.target.value });
+$('power').onclick = async () => {
+  if (busy) return;
+  busy = true; $('err').textContent = ''; if (S) render(S);
+  try { busy = false; render(await api('toggle', {})); } catch (e) { busy = false; $('err').textContent = e.message; refresh(); }
+};
+$('gear').onclick = () => { $('home').classList.add('hidden'); $('settings').classList.remove('hidden'); window.scrollTo(0, 0); refresh(); };
+$('back').onclick = () => { $('settings').classList.add('hidden'); $('home').classList.remove('hidden'); };
+$('aboutBtn').onclick = () => $('about').classList.remove('hidden');
+$('aboutClose').onclick = () => $('about').classList.add('hidden');
+$('about').onclick = e => { if (e.target.id === 'about') $('about').classList.add('hidden'); };
+document.onkeydown = e => { if (e.key === 'Escape') { $('about').classList.add('hidden'); if (!$('settings').classList.contains('hidden')) $('back').onclick(); } };
+
 $('route').onchange = e => save({ route: e.target.value });
+$('mode').onchange = e => save({ mode: e.target.value });
 $('bridges').onchange = e => save({ bridges: e.target.value });
 $('saveCustom').onclick = () => save({ custom_bridges: $('custom').value });
 $('doh').onchange = e => save({ doh: e.target.value });
@@ -203,19 +272,16 @@ async function runTest() {
   out.innerHTML = '<div class="verdict">Пробую все методы и Tor, до минуты…</div>';
   try {
     const res = await api('test', { host });
-    const ok = res.filter(r => r.ok);
-    const plain = res.find(r => r.strategy === 'none');
-    const tor = res.find(r => r.strategy === 'tor');
-    const dpiOk = ok.filter(r => r.strategy !== 'tor');
+    const plain = res.find(r => r.strategy === 'none'), tor = res.find(r => r.strategy === 'tor');
+    const dpiOk = res.filter(r => r.ok && r.strategy !== 'tor');
     let v;
     if (plain && plain.ok) v = '✓ Сайт открывается и без обхода.';
-    else if (!dpiOk.length && tor && tor.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через Tor</b> — в режиме «Авто» это произойдёт само.';
-    else if (dpiOk.length) v = '✓ Блокировка по DPI — обходится. Лучший метод: <b>' + esc(dpiOk.sort((a, b) => a.ms - b.ms)[0].name) + '</b>. В режиме «Авто» он подберётся сам.';
-    else if (res.every(r => /TCP|IP/.test(r.info))) v = '✗ Не удаётся даже подключиться к серверу сайта — это блокировка по IP. Включите маршрут «Авто» или «Всё через Tor» — Tor обходит такие блокировки.';
-    else v = '✗ Ни один метод не помог. Возможно, у вашего провайдера более строгая фильтрация или сайт заблокирован по IP.';
+    else if (dpiOk.length) v = '✓ Блокировка по DPI — обходится. Лучший метод: <b>' + esc(dpiOk.sort((a, b) => a.ms - b.ms)[0].name) + '</b>.';
+    else if (tor && tor.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через Tor</b> — в режиме «Авто» это произойдёт само.';
+    else v = '✗ Не открылся ни одним способом. Если Tor не подключён — проверьте мосты в настройках выше.';
     out.innerHTML = '<div class="verdict">' + v + '</div><table>' + res.map(r =>
       `<tr><td>${esc(r.name)}<div class="info">${esc(r.info)}</div></td><td class="r ${r.ok ? 'yes' : 'no'}">${r.ok ? '✓ ' + r.ms + ' мс' : '✗'}</td></tr>`).join('') + '</table>';
-  } catch (e) { out.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+  } catch (e) { out.innerHTML = '<div class="verdict no">' + esc(e.message) + '</div>'; }
   btn.disabled = false; btn.textContent = 'Проверить';
 }
 $('test').onclick = runTest;
@@ -225,10 +291,12 @@ $('quit').onclick = async () => {
   if (!confirm('Выключить обход и закрыть программу?')) return;
   try { await api('quit', {}); } catch {}
   clearInterval(timer);
-  document.body.innerHTML = '<main><div class="card hero"><div class="status">Программа закрыта</div><div class="sub">Системный прокси выключен. Окно можно закрыть.</div></div></main>';
+  document.body.innerHTML = '<section id="home"><div class="state">Программа закрыта</div><div class="sub">Системный прокси выключен. Окно можно закрыть.</div></section>';
 };
+
 refresh();
 const timer = setInterval(refresh, 1500);
+setInterval(loadIP, 120000);
 </script>
 </body>
 </html>

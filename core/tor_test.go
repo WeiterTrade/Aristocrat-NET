@@ -272,3 +272,40 @@ func TestBuildTorrc(t *testing.T) {
 }
 
 var _ = binary.BigEndian
+
+// Android: snowflake из старого pt_config (отдельный snowflake-client) должен идти через наш liblyrebird.so,
+// а webtunnel без встроенных мостов — давать понятную ошибку, а не падение tor.
+func TestAndroidTorrcPaths(t *testing.T) {
+	dir := t.TempDir()
+	ptPath := filepath.Join(dir, "pt_config.json")
+	old := strings.Replace(samplePT, `"ClientTransportPlugin snowflake exec ${pt_path}lyrebird"`,
+		`"ClientTransportPlugin snowflake exec ${pt_path}snowflake-client -url https://x/ -log snow.log"`, 1)
+	os.WriteFile(ptPath, []byte(old), 0o600)
+	lyre := "/data/app/org.obhod.app/lib/arm/liblyrebird.so"
+	rc, err := BuildTorrc(TorOptions{Bridges: "snowflake", SocksAddr: torSocksAddr, PTConfigPath: ptPath,
+		LyrebirdPath: lyre, ForAndroid: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rc, "ClientTransportPlugin snowflake exec "+lyre+"\n") || strings.Contains(rc, "snowflake-client") {
+		t.Fatalf("snowflake должен запускаться через liblyrebird.so:\n%s", rc)
+	}
+	if _, err := BuildTorrc(TorOptions{Bridges: "webtunnel", SocksAddr: torSocksAddr, PTConfigPath: ptPath,
+		LyrebirdPath: lyre, ForAndroid: true}); err == nil || !strings.Contains(err.Error(), "GetBridgesBot") {
+		t.Fatalf("ожидалась подсказка про свои мосты, получено: %v", err)
+	}
+}
+
+func TestExplainTorExit(t *testing.T) {
+	cases := map[string]string{
+		"[warn] It looks like another Tor process is running with the same data directory.":        "старая копия tor",
+		"[warn] Could not bind to 127.0.0.1:9077: Address already in use. Is Tor already running?": "порт Tor занят",
+		"[warn] Managed proxy at 'pt\\lyrebird.exe' failed at launch.":                             "транспорт мостов",
+		"[warn] Our clock is 2 hours behind the time published in the consensus":                   "clock",
+	}
+	for line, want := range cases {
+		if got := explainTorExit([]string{line}, nil); !strings.Contains(got, want) {
+			t.Errorf("%q → %q, ожидалось %q", line, got, want)
+		}
+	}
+}

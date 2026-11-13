@@ -4,11 +4,9 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.ServiceInfo;
 import android.net.VpnService;
@@ -16,8 +14,6 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
-
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import org.torproject.jni.TorService;
 
@@ -63,6 +59,23 @@ public class ObhodVpnService extends VpnService {
     private boolean torBound;
     private Thread worker;
 
+    static void start(Context c) {
+        Intent i = new Intent(c, ObhodVpnService.class).setAction(ACTION_START);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            c.startForegroundService(i);
+        } else {
+            c.startService(i);
+        }
+    }
+
+    /** Новые настройки применяются перезапуском службы. */
+    static void restartIfRunning(Context c) {
+        if (!"on".equals(state) && !"starting".equals(state)) return;
+        final Context app = c.getApplicationContext();
+        app.startService(new Intent(app, ObhodVpnService.class).setAction(ACTION_STOP));
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> start(app), 1000);
+    }
+
     static void log(String line) {
         Log.i(TAG, line);
         synchronized (LOG) {
@@ -86,21 +99,10 @@ public class ObhodVpnService extends VpnService {
 
     private final ServiceConnection torConn = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) { log("TorService запущен"); }
-        @Override public void onServiceDisconnected(ComponentName name) { torState = "Tor остановлен"; }
-    };
-
-    private final BroadcastReceiver torStatus = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String s = intent.getStringExtra(TorService.EXTRA_STATUS);
-            if (TorService.STATUS_ON.equals(s)) {
-                torState = "Tor подключён — запасной путь готов";
-                log("Tor подключён");
-            } else if (TorService.STATUS_STARTING.equals(s)) {
-                torState = "Tor подключается… (через мосты это может занять до минуты)";
-            } else if (TorService.STATUS_OFF.equals(s)) {
-                torState = "Tor выключен";
-            }
+        @Override public void onServiceDisconnected(ComponentName name) {
+            // Процесс :tor упал (обычно — не запустился транспорт мостов). Приложение и обход DPI продолжают работать.
+            torState = "Tor аварийно завершился — выберите другой тип мостов в настройках";
+            log(torState);
         }
     };
 
@@ -181,8 +183,6 @@ public class ObhodVpnService extends VpnService {
             if (useTor) {
                 try {
                     writeTorrc(coreBin, lyrebird, data);
-                    LocalBroadcastManager.getInstance(this)
-                            .registerReceiver(torStatus, new IntentFilter(TorService.ACTION_STATUS));
                     torBound = bindService(new Intent(this, TorService.class), torConn, BIND_AUTO_CREATE);
                     torState = "Tor подключается…";
                 } catch (Exception e) {
@@ -324,7 +324,11 @@ public class ObhodVpnService extends VpnService {
         Thread t = new Thread(() -> {
             try (BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
                 String l;
-                while ((l = r.readLine()) != null) log(l);
+                while ((l = r.readLine()) != null) {
+                    log(l);
+                    if (l.contains("Tor подключён")) torState = "Tor подключён";
+                    else if (l.contains("Tor завершился")) torState = l.replaceFirst("^\\S+ ", "");
+                }
             } catch (IOException ignored) {
             }
         }, "obhod-core-log");
@@ -385,10 +389,6 @@ public class ObhodVpnService extends VpnService {
             }
             torBound = false;
             stopService(new Intent(this, TorService.class));
-            try {
-                LocalBroadcastManager.getInstance(this).unregisterReceiver(torStatus);
-            } catch (Exception ignored) {
-            }
         }
     }
 }

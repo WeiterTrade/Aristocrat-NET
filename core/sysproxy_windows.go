@@ -5,9 +5,12 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -115,4 +118,18 @@ func afterStart(cmd *exec.Cmd) {
 	}
 	_, _, _ = procAssignProcessToJob.Call(killJob, ph)
 	_ = syscall.CloseHandle(syscall.Handle(ph))
+}
+
+// killStaleTor завершает копии нашего tor.exe, оставшиеся от прошлых запусков
+// (они держат папку данных и порт, и новый tor завершается с ошибкой).
+// Трогаем только tor.exe из папки «Обхода», а не, например, Tor Browser.
+func killStaleTor(torExe, pidFile string) {
+	_ = os.Remove(pidFile)
+	path := strings.ReplaceAll(torExe, "'", "''")
+	script := "Get-Process tor -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '" + path +
+		"' } | Stop-Process -Force -ErrorAction SilentlyContinue"
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	hideWindow(cmd)
+	_ = cmd.Run()
+	time.Sleep(300 * time.Millisecond)
 }

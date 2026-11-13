@@ -5,10 +5,15 @@
     <string name="disconnect">Выключить</string>
     <string name="status_off">Выключено</string>
     <string name="status_starting">Запуск…</string>
-    <string name="status_on">Обход включён</string>
+    <string name="status_on">Шифрование включено</string>
+    <string name="settings">Настройки</string>
+    <string name="about">О программе</string>
+    <string name="about_text">Шифрует DNS и обходит блокировки провайдера прямо на устройстве — без VPN-подписок и своих серверов.\n\nСначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через сеть Tor.\n\nИспользуются: Tor (tor-android), lyrebird, hev-socks5-tunnel. Лицензия MIT.</string>
+    <string name="ip_unknown">IP не определён</string>
+    <string name="sub_off">Трафик идёт как обычно</string>
     <string name="route_label">Маршрут</string>
     <string name="bridges_label">Мосты Tor</string>
-    <string name="custom_hint">Свои мосты (obfs4 / webtunnel), по одной строке. Получить: Telegram-бот @GetBridgesBot</string>
+    <string name="custom_hint">Свои мосты obfs4 или webtunnel, по одной строке. Получить: Telegram-бот @GetBridgesBot</string>
     <string name="save">Сохранить</string>
     <string name="log_label">Журнал</string>
     <string name="notif_channel">Работа VPN</string>
@@ -26,7 +31,6 @@
     </string-array>
     <string-array name="bridge_names">
         <item>Snowflake (рекомендуется)</item>
-        <item>WebTunnel</item>
         <item>obfs4</item>
         <item>meek (Azure)</item>
         <item>Свои мосты</item>
@@ -34,7 +38,6 @@
     </string-array>
     <string-array name="bridge_values">
         <item>snowflake</item>
-        <item>webtunnel</item>
         <item>obfs4</item>
         <item>meek</item>
         <item>custom</item>

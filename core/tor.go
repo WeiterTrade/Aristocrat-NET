@@ -23,14 +23,14 @@ import (
 // Типы мостов. В РФ/РК прямое подключение к Tor заблокировано, поэтому по умолчанию — snowflake.
 var BridgeNames = map[string]string{
 	"snowflake": "Snowflake (рекомендуется)",
-	"webtunnel": "WebTunnel",
 	"obfs4":     "obfs4",
 	"meek":      "meek (Azure)",
 	"custom":    "Свои мосты",
 	"none":      "Без мостов",
 }
 
-var bridgeOrder = []string{"snowflake", "webtunnel", "obfs4", "meek", "custom", "none"}
+// WebTunnel-мостов в Tor нет встроенных — их получают в @GetBridgesBot и вставляют в «Свои мосты».
+var bridgeOrder = []string{"snowflake", "obfs4", "meek", "custom", "none"}
 
 // PTConfig — формат pt_config.json из Tor Expert Bundle.
 type PTConfig struct {
@@ -119,7 +119,8 @@ func BuildTorrc(o TorOptions) (string, error) {
 			lines = pt.Bridges["meek-azure"]
 		}
 		if len(lines) == 0 {
-			return "", fmt.Errorf("в pt_config.json нет мостов типа %s", o.Bridges)
+			return "", fmt.Errorf("встроенных мостов типа %s нет — получите мосты в Telegram-боте @GetBridgesBot "+
+				"и вставьте их в «Свои мосты»", o.Bridges)
 		}
 	}
 
@@ -154,10 +155,20 @@ func BuildTorrc(o TorOptions) (string, error) {
 			if !used {
 				continue
 			}
-			if o.LyrebirdPath != "" && strings.Contains(line, "lyrebird") {
-				// Android: исполняемый файл лежит в nativeLibraryDir под другим именем.
-				exe := fields[3]
-				line = strings.Replace(line, exe, o.LyrebirdPath, 1)
+			if o.LyrebirdPath != "" {
+				// Android: все транспорты (obfs4, meek, snowflake, webtunnel) даёт один lyrebird,
+				// он лежит в nativeLibraryDir под именем liblyrebird.so. Аргументы после пути
+				// (например, у conjure) отбрасываем — такие транспорты lyrebird не поддерживает.
+				ts := []string{}
+				for _, t := range strings.Split(fields[1], ",") {
+					if lyrebirdTransports[t] {
+						ts = append(ts, t)
+					}
+				}
+				if len(ts) == 0 {
+					continue
+				}
+				line = "ClientTransportPlugin " + strings.Join(ts, ",") + " exec " + o.LyrebirdPath
 			} else {
 				line = strings.ReplaceAll(line, "${pt_path}", ptDir+string(filepath.Separator))
 				if runtime.GOOS == "windows" {
@@ -184,6 +195,10 @@ func BuildTorrc(o TorOptions) (string, error) {
 	}
 	return b.String(), nil
 }
+
+// Транспорты, которые умеет lyrebird ≥ 0.6.
+var lyrebirdTransports = map[string]bool{"meek_lite": true, "obfs2": true, "obfs3": true, "obfs4": true,
+	"scramblesuit": true, "webtunnel": true, "snowflake": true}
 
 func looksLikeAddr(s string) bool { return strings.ContainsAny(s, ".:[") }
 
@@ -291,8 +306,9 @@ func (t *Tor) WaitReady(d time.Duration) bool {
 var reBootstrap = regexp.MustCompile(`Bootstrapped (\d+)%`)
 
 // Start запускает tor с указанным torrc.
-func (t *Tor) Start(torExe, torrcPath, libDir, workDir, socks string) error {
+func (t *Tor) Start(torExe, torrcPath, libDir, workDir, socks, pidFile string) error {
 	t.Stop()
+	killStaleTor(torExe, pidFile)
 	cmd := exec.Command(torExe, "-f", torrcPath)
 	cmd.Dir = workDir
 	if runtime.GOOS == "linux" && libDir != "" {
@@ -309,6 +325,11 @@ func (t *Tor) Start(torExe, torrcPath, libDir, workDir, socks string) error {
 		return fmt.Errorf("не удалось запустить tor: %w", err)
 	}
 	afterStart(cmd)
+	if pidFile != "" {
+		_ = os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
+	}
+	var tailMu sync.Mutex
+	var tail []string
 	t.mu.Lock()
 	t.cmd, t.socks, t.external = cmd, socks, false
 	t.status, t.progress, t.errMsg = "starting", 0, ""
@@ -333,24 +354,59 @@ func (t *Tor) Start(torExe, torrcPath, libDir, workDir, socks string) error {
 			}
 			if strings.Contains(line, "[warn]") || strings.Contains(line, "[err]") {
 				t.logf("tor: %s", trimTorLog(line))
+				tailMu.Lock()
+				tail = append(tail, trimTorLog(line))
+				if len(tail) > 30 {
+					tail = tail[1:]
+				}
+				tailMu.Unlock()
 			}
 		}
 	}()
 	go func() {
 		err := cmd.Wait()
+		if pidFile != "" {
+			_ = os.Remove(pidFile)
+		}
+		tailMu.Lock()
+		reason := explainTorExit(tail, err)
+		tailMu.Unlock()
 		t.mu.Lock()
 		if t.cmd == cmd {
 			t.cmd = nil
 			t.status = "error"
-			t.errMsg = "tor завершился"
-			if err != nil {
-				t.errMsg += ": " + err.Error()
-			}
+			t.errMsg = "Tor завершился: " + reason
 			t.logf("%s", t.errMsg)
 		}
 		t.mu.Unlock()
 	}()
 	return nil
+}
+
+// explainTorExit переводит причину завершения tor на понятный язык.
+func explainTorExit(tail []string, err error) string {
+	all := strings.ToLower(strings.Join(tail, "\n"))
+	switch {
+	case strings.Contains(all, "another tor process is running"):
+		return "работает старая копия tor — перезапустите программу или компьютер"
+	case strings.Contains(all, "address already in use") || strings.Contains(all, "could not bind"):
+		return "порт Tor занят другой программой"
+	case strings.Contains(all, "managed proxy") || strings.Contains(all, "pluggable transport") ||
+		strings.Contains(all, "clienttransportplugin"):
+		return "не запустился транспорт мостов (lyrebird) — попробуйте другой тип мостов"
+	}
+	for i := len(tail) - 1; i >= 0; i-- {
+		if strings.Contains(tail[i], "[err]") {
+			return tail[i]
+		}
+	}
+	if len(tail) > 0 {
+		return tail[len(tail)-1]
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return "без сообщения об ошибке"
 }
 
 func trimTorLog(l string) string {

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -132,9 +133,15 @@ func (a *App) startTor() {
 		return
 	}
 	dataDir := filepath.Join(a.dir, "tor-data")
+	// Свободный порт для SOCKS Tor: фиксированный мог остаться занят старой копией tor.
+	socks := torSocksAddr
+	if l, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
+		socks = l.Addr().String()
+		l.Close()
+	}
 	_ = os.MkdirAll(dataDir, 0o700)
 	torrc, err := BuildTorrc(TorOptions{
-		Bridges: bridges, Custom: custom, SocksAddr: torSocksAddr, DataDir: dataDir,
+		Bridges: bridges, Custom: custom, SocksAddr: socks, DataDir: dataDir,
 		PTConfigPath: paths.PTConfig, PTDir: "pt", WorkDir: paths.Root, GeoIPDir: paths.GeoIPDir,
 	})
 	if err != nil {
@@ -147,7 +154,7 @@ func (a *App) startTor() {
 		a.torErr = err.Error()
 		return
 	}
-	if err := a.tor.Start(paths.Exe, torrcPath, paths.LibDir, paths.Root, torSocksAddr); err != nil {
+	if err := a.tor.Start(paths.Exe, torrcPath, paths.LibDir, paths.Root, socks, filepath.Join(a.dir, "tor.pid")); err != nil {
 		a.torErr = err.Error()
 		a.logf("Tor: %v", err)
 	}
@@ -268,6 +275,14 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		}
 		_, _ = w.Write([]byte("obhod"))
 	})
+	mux.HandleFunc("/api/ip", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		ip, err := publicIP()
+		if err != nil {
+			writeJSON(w, 200, map[string]string{"ip": "", "error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]string{"ip": ip})
+	}))
 	mux.HandleFunc("/api/state", a.guard(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, a.state()) }))
 	mux.HandleFunc("/api/logs", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
@@ -518,6 +533,42 @@ func main() {
 		log.Println(err)
 	}
 	shutdown()
+}
+
+var ipCache struct {
+	sync.Mutex
+	ip  string
+	exp time.Time
+}
+
+// publicIP — реальный внешний IP (запрос идёт напрямую, мимо прокси и Tor).
+func publicIP() (string, error) {
+	ipCache.Lock()
+	defer ipCache.Unlock()
+	if ipCache.ip != "" && time.Now().Before(ipCache.exp) {
+		return ipCache.ip, nil
+	}
+	cl := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	var lastErr error
+	for _, u := range []string{"https://api.ipify.org", "https://ipv4.icanhazip.com", "https://ifconfig.me/ip"} {
+		resp, err := cl.Get(u)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		b := make([]byte, 64)
+		n, _ := io.ReadFull(resp.Body, b)
+		resp.Body.Close()
+		ip := strings.TrimSpace(string(b[:n]))
+		if net.ParseIP(ip) != nil {
+			ipCache.ip, ipCache.exp = ip, time.Now().Add(2*time.Minute)
+			return ip, nil
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("сервис определения IP не ответил")
+	}
+	return "", lastErr
 }
 
 // runningInstance проверяет, работает ли уже «Обход» на порту интерфейса, и возвращает адрес его окна.
