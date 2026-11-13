@@ -50,6 +50,9 @@ jobs:
         with:
           go-version: ${{ env.GO_WIN7 }}
           cache: false
+      - name: Зависимости Go (go.sum)
+        working-directory: core
+        run: go mod tidy
       - name: Тесты ядра (Go 1.20)
         working-directory: core
         run: |
@@ -71,13 +74,17 @@ jobs:
         with:
           go-version: ${{ env.GO_WIN7 }}
           cache: false
+      - name: Зависимости Go (go.sum)
+        working-directory: core
+        run: go mod tidy
       - name: Инструменты (NSIS, windres)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis binutils-mingw-w64-i686 zip
-      - name: Иконка программы
+      - name: Иконка и манифест программы
         working-directory: core
         run: |
-          printf '1 ICON "../assets/obhod.ico"\n' > obhod.rc
-          i686-w64-mingw32-windres -O coff -i obhod.rc -o rsrc_windows_386.syso || echo "иконка не встроена"
+          # Иконка (ресурс 1) и манифест (стили Windows и DPI — без него окна не создадутся).
+          printf '1 ICON "../assets/obhod.ico"\n1 24 "../packaging/windows/obhod.manifest"\n' > obhod.rc
+          i686-w64-mingw32-windres -O coff -i obhod.rc -o rsrc_windows_386.syso
       - name: Сборка Obhod.exe (x86, работает на Windows 7–11 x86/x64)
         working-directory: core
         run: |
@@ -110,19 +117,25 @@ jobs:
 
   linux:
     needs: [version, test]
-    runs-on: ubuntu-latest
+    # Ubuntu 22.04: собранная программа запускается на Ubuntu 22.04+, Linux Mint 21+, Debian 12, Fedora.
+    runs-on: ubuntu-22.04
     env:
       V: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_WIN7 }}
+          go-version: "1.22"
           cache: false
-      - name: Сборка obhod (linux/amd64)
+      - name: Зависимости Go (go.sum)
+        working-directory: core
+        run: go mod tidy
+      - name: Библиотеки окна (GTK3, WebKitGTK 4.1)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+      - name: Сборка obhod (linux/amd64, нативное окно + трей)
         working-directory: core
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags gui -trimpath \
             -ldflags "-s -w -X main.appVersion=$V" -o ../build/linux/obhod .
       - name: Tor для Linux
         run: bash scripts/fetch-tor.sh linux-x86_64 build/linux/tor
@@ -159,6 +172,9 @@ jobs:
         with:
           go-version: "1.24"
           cache: false
+      - name: Зависимости Go (go.sum)
+        working-directory: core
+        run: go mod tidy
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
