@@ -33,7 +33,7 @@ import (
 
 const appName = "Obhod"
 
-var appVersion = "0.3.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.4.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -88,6 +88,7 @@ type App struct {
 	logs     []string
 	proxyErr string
 	torErr   string
+	showUI   func() // показать окно программы (нативное окно на Windows, браузер на Linux)
 }
 
 func (a *App) logf(f string, args ...any) {
@@ -132,17 +133,34 @@ func (a *App) startTor() {
 		a.logf("Tor: %v", err)
 		return
 	}
-	dataDir := filepath.Join(a.dir, "tor-data")
+	// Tor запускается из папки данных программы, и все пути в torrc — относительные и только латиницей:
+	// tor на Windows читает пути в однобайтовой кодировке (ломаются «C:\Users\Олег\…»),
+	// а путь к транспорту в ClientTransportPlugin не может содержать пробелы («Program Files»).
+	_ = os.MkdirAll(filepath.Join(a.dir, "tor-data"), 0o700)
+	ptDir := filepath.Dir(paths.PTConfig)
+	if paths.PTConfig != "" {
+		if err := syncDir(ptDir, filepath.Join(a.dir, "pt")); err != nil {
+			a.torErr = "не удалось подготовить транспорты Tor: " + err.Error()
+			a.logf("Tor: %s", a.torErr)
+			return
+		}
+		ptDir = "pt"
+	}
+	geoDir := paths.GeoIPDir
+	if geoDir != "" {
+		if err := syncDir(geoDir, filepath.Join(a.dir, "geoip")); err == nil {
+			geoDir = "geoip"
+		}
+	}
 	// Свободный порт для SOCKS Tor: фиксированный мог остаться занят старой копией tor.
 	socks := torSocksAddr
 	if l, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
 		socks = l.Addr().String()
 		l.Close()
 	}
-	_ = os.MkdirAll(dataDir, 0o700)
 	torrc, err := BuildTorrc(TorOptions{
-		Bridges: bridges, Custom: custom, SocksAddr: socks, DataDir: dataDir,
-		PTConfigPath: paths.PTConfig, PTDir: "pt", WorkDir: paths.Root, GeoIPDir: paths.GeoIPDir,
+		Bridges: bridges, Custom: custom, SocksAddr: socks, DataDir: "tor-data",
+		PTConfigPath: paths.PTConfig, PTDir: ptDir, WorkDir: a.dir, GeoIPDir: geoDir,
 	})
 	if err != nil {
 		a.torErr = err.Error()
@@ -154,10 +172,42 @@ func (a *App) startTor() {
 		a.torErr = err.Error()
 		return
 	}
-	if err := a.tor.Start(paths.Exe, torrcPath, paths.LibDir, paths.Root, socks, filepath.Join(a.dir, "tor.pid")); err != nil {
+	if err := a.tor.Start(paths.Exe, "torrc", paths.LibDir, a.dir, socks, filepath.Join(a.dir, "tor.pid")); err != nil {
 		a.torErr = err.Error()
 		a.logf("Tor: %v", err)
 	}
+}
+
+// settings возвращает копию текущих настроек.
+func (a *App) settings() Settings {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.s
+}
+
+// applySettings применяет и сохраняет настройки (используют веб-интерфейс и нативное окно).
+func (a *App) applySettings(s Settings) error {
+	s.normalize()
+	a.mu.Lock()
+	old := a.s
+	a.s.Port, a.s.Mode, a.s.Route, a.s.SysProxy, a.s.DoH, a.s.AutoStart = s.Port, s.Mode, s.Route, s.SysProxy, s.DoH, s.AutoStart
+	a.s.Bridges, a.s.CustomBridges = s.Bridges, s.CustomBridges
+	a.mu.Unlock()
+	a.eng.Mode.Store(s.Mode)
+	a.eng.Route.Store(s.Route)
+	a.res.SetPreferred(s.DoH)
+	a.save()
+	if a.eng.Running() {
+		if s.Port != old.Port || s.SysProxy != old.SysProxy {
+			a.disable()
+			return a.enable()
+		} else if s.Route == RouteDPI {
+			a.tor.Stop()
+		} else if s.Bridges != old.Bridges || s.CustomBridges != old.CustomBridges || old.Route == RouteDPI {
+			a.startTor()
+		}
+	}
+	return nil
 }
 
 func (a *App) enable() error {
@@ -264,7 +314,7 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data: https://flagcdn.com")
 		_, _ = w.Write(indexHTML)
 	})
 	// /ping — чтобы повторно запущенная копия узнала, что «Обход» уже работает.
@@ -275,13 +325,22 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		}
 		_, _ = w.Write([]byte("obhod"))
 	})
+	mux.HandleFunc("/api/show", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		a.mu.Lock()
+		show := a.showUI
+		a.mu.Unlock()
+		if show != nil {
+			go show()
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	}))
 	mux.HandleFunc("/api/ip", a.guard(func(w http.ResponseWriter, r *http.Request) {
-		ip, err := publicIP()
+		ip, cc, err := publicIP()
 		if err != nil {
 			writeJSON(w, 200, map[string]string{"ip": "", "error": err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]string{"ip": ip})
+		writeJSON(w, 200, map[string]string{"ip": ip, "country": cc})
 	}))
 	mux.HandleFunc("/api/state", a.guard(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, a.state()) }))
 	mux.HandleFunc("/api/logs", a.guard(func(w http.ResponseWriter, r *http.Request) {
@@ -305,28 +364,9 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 			writeJSON(w, 400, map[string]string{"error": "неверные настройки"})
 			return
 		}
-		s.normalize()
-		a.mu.Lock()
-		old := a.s
-		a.s.Port, a.s.Mode, a.s.Route, a.s.SysProxy, a.s.DoH, a.s.AutoStart = s.Port, s.Mode, s.Route, s.SysProxy, s.DoH, s.AutoStart
-		a.s.Bridges, a.s.CustomBridges = s.Bridges, s.CustomBridges
-		a.mu.Unlock()
-		a.eng.Mode.Store(s.Mode)
-		a.eng.Route.Store(s.Route)
-		a.res.SetPreferred(s.DoH)
-		a.save()
-		if a.eng.Running() {
-			if s.Port != old.Port || s.SysProxy != old.SysProxy {
-				a.disable()
-				if err := a.enable(); err != nil {
-					writeJSON(w, 400, map[string]string{"error": err.Error()})
-					return
-				}
-			} else if s.Route == RouteDPI {
-				a.tor.Stop()
-			} else if s.Bridges != old.Bridges || s.CustomBridges != old.CustomBridges || old.Route == RouteDPI {
-				a.startTor()
-			}
+		if err := a.applySettings(s); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
 		}
 		writeJSON(w, 200, a.state())
 	}))
@@ -381,6 +421,7 @@ func main() {
 		ptConfig   = flag.String("pt-config", "", "путь к pt_config.json")
 		lyrebird   = flag.String("lyrebird", "", "путь к lyrebird")
 		version    = flag.Bool("version", false, "версия")
+		minimized  = flag.Bool("minimized", false, "запуститься свёрнутым в трей")
 	)
 	flag.Parse()
 	if *version {
@@ -492,11 +533,8 @@ func main() {
 	// Одна копия программы: если «Обход» уже запущен (окно просто закрыли, а он работает в фоне),
 	// открываем его окно и выходим, вместо того чтобы запускать вторую копию.
 	tokenFile := filepath.Join(a.dir, "ui-token")
-	if url, ok := runningInstance(*uiPort, tokenFile); ok {
-		fmt.Println("«Обход» уже запущен:", url)
-		if !*noBrowser {
-			openWindow(url)
-		}
+	if runningInstance(*uiPort, tokenFile) {
+		fmt.Println("«Обход» уже запущен — показываю его окно")
 		return
 	}
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *uiPort))
@@ -526,70 +564,154 @@ func main() {
 
 	url := fmt.Sprintf("http://%s/#%s", a.addr, a.token)
 	fmt.Printf("%s %s — интерфейс: %s\n", appName, appVersion, url)
-	if !*noBrowser {
-		go func() { time.Sleep(300 * time.Millisecond); openWindow(url) }()
-	}
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-		log.Println(err)
-	}
+	served := make(chan struct{})
+	go func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Println(err)
+		}
+		close(served)
+	}()
+	// Окно и значок в трее; возвращается после выхода из программы.
+	runDesktopUI(a, url, !*noBrowser && !*minimized, shutdown, served)
 	shutdown()
 }
 
 var ipCache struct {
 	sync.Mutex
-	ip  string
-	exp time.Time
+	ip, country string
+	exp         time.Time
 }
 
-// publicIP — реальный внешний IP (запрос идёт напрямую, мимо прокси и Tor).
-func publicIP() (string, error) {
+// publicIP — реальный внешний IP и страна (запрос идёт напрямую, мимо прокси и Tor).
+func publicIP() (string, string, error) {
 	ipCache.Lock()
 	defer ipCache.Unlock()
 	if ipCache.ip != "" && time.Now().Before(ipCache.exp) {
-		return ipCache.ip, nil
+		return ipCache.ip, ipCache.country, nil
 	}
 	cl := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: nil}}
-	var lastErr error
-	for _, u := range []string{"https://api.ipify.org", "https://ipv4.icanhazip.com", "https://ifconfig.me/ip"} {
+	get := func(u string) ([]byte, error) {
 		resp, err := cl.Get(u)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		return io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	}
+	var ip, cc string
+	var lastErr error
+	// Сервисы, сразу отдающие IP и страну.
+	for _, u := range []struct{ url, ipKey, ccKey string }{
+		{"https://api.country.is/", "ip", "country"},
+		{"https://ipwho.is/", "ip", "country_code"},
+		{"https://ipinfo.io/json", "ip", "country"},
+	} {
+		b, err := get(u.url)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		b := make([]byte, 64)
-		n, _ := io.ReadFull(resp.Body, b)
-		resp.Body.Close()
-		ip := strings.TrimSpace(string(b[:n]))
+		var m map[string]any
+		if json.Unmarshal(b, &m) != nil {
+			continue
+		}
+		ip, _ = m[u.ipKey].(string)
+		cc, _ = m[u.ccKey].(string)
 		if net.ParseIP(ip) != nil {
-			ipCache.ip, ipCache.exp = ip, time.Now().Add(2*time.Minute)
-			return ip, nil
+			break
+		}
+		ip = ""
+	}
+	// Запасной вариант — только IP.
+	if ip == "" {
+		for _, u := range []string{"https://api.ipify.org", "https://ipv4.icanhazip.com"} {
+			if b, err := get(u); err == nil && net.ParseIP(strings.TrimSpace(string(b))) != nil {
+				ip = strings.TrimSpace(string(b))
+				break
+			} else if err != nil {
+				lastErr = err
+			}
 		}
 	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("сервис определения IP не ответил")
+	if ip == "" {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("сервис определения IP не ответил")
+		}
+		return "", "", lastErr
 	}
-	return "", lastErr
+	cc = strings.ToUpper(strings.TrimSpace(cc))
+	if len(cc) != 2 {
+		cc = ""
+	}
+	ipCache.ip, ipCache.country, ipCache.exp = ip, cc, time.Now().Add(2*time.Minute)
+	return ip, cc, nil
 }
 
-// runningInstance проверяет, работает ли уже «Обход» на порту интерфейса, и возвращает адрес его окна.
-func runningInstance(uiPort int, tokenFile string) (string, bool) {
+// runningInstance: если «Обход» уже запущен (окно закрыто, программа в трее), просит его показать окно.
+func runningInstance(uiPort int, tokenFile string) bool {
 	addr := fmt.Sprintf("127.0.0.1:%d", uiPort)
-	cl := &http.Client{Timeout: 1500 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	cl := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	resp, err := cl.Get("http://" + addr + "/ping")
 	if err != nil {
-		return "", false
+		return false
 	}
-	defer resp.Body.Close()
 	b := make([]byte, 16)
 	n, _ := resp.Body.Read(b)
+	resp.Body.Close()
 	if string(b[:n]) != "obhod" {
-		return "", false
+		return false
 	}
 	tok, err := os.ReadFile(tokenFile)
 	if err != nil || len(tok) == 0 {
-		return "", false
+		return false
 	}
-	return fmt.Sprintf("http://%s/#%s", addr, strings.TrimSpace(string(tok))), true
+	token := strings.TrimSpace(string(tok))
+	req, _ := http.NewRequest("POST", "http://"+addr+"/api/show", strings.NewReader("{}"))
+	req.Header.Set("X-Token", token)
+	if r2, err := cl.Do(req); err == nil {
+		r2.Body.Close()
+		if r2.StatusCode == 200 {
+			return true
+		}
+	}
+	// Старая версия без /api/show — просто открываем её интерфейс.
+	openWindow(fmt.Sprintf("http://%s/#%s", addr, token))
+	return true
+}
+
+// syncDir копирует файлы из src в dst (без подпапок), если они отличаются размером или отсутствуют.
+func syncDir(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o700); err != nil {
+		return err
+	}
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		to := filepath.Join(dst, e.Name())
+		if st, err := os.Stat(to); err == nil && st.Size() == info.Size() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(to, b, 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func fileExists(p string) bool { st, err := os.Stat(p); return err == nil && !st.IsDir() }

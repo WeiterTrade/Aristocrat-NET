@@ -36,6 +36,7 @@
   .sub { color:var(--muted); font-size:13px; margin-top:4px; min-height:19px; }
   .ip { margin-top:18px; font-size:15px; }
   .ip b { font-family:ui-monospace,Consolas,monospace; font-weight:600; }
+  .flag { width:24px; height:18px; vertical-align:-3px; margin:0 2px; border-radius:2px; box-shadow:0 0 0 1px rgba(0,0,0,.12); }
   .err { color:var(--warn); font-size:13px; margin-top:10px; white-space:pre-wrap; max-width:380px; }
   .bar { height:4px; background:var(--line); border-radius:4px; margin:8px auto 0; width:200px; overflow:hidden; }
   .bar i { display:block; height:100%; background:var(--accent); }
@@ -228,7 +229,14 @@ async function loadIP() {
   $('ip').innerHTML = 'Ваш IP: <b>…</b>';
   try {
     const r = await api('ip');
-    $('ip').innerHTML = r.ip ? 'Ваш IP: <b>' + esc(r.ip) + '</b>' : 'IP не определён';
+    if (!r.ip) { $('ip').textContent = 'IP не определён'; return; }
+    let flag = '';
+    if (/^[A-Z]{2}$/.test(r.country || '')) {
+      const cc = r.country.toLowerCase();
+      // Флаг картинкой (Windows не рисует флаги-эмодзи); если не загрузится — код страны.
+      flag = `<img class="flag" src="https://flagcdn.com/24x18/${cc}.png" srcset="https://flagcdn.com/48x36/${cc}.png 2x" alt="${r.country}" title="${r.country}" onerror="this.replaceWith(document.createTextNode('${r.country}'))">`;
+    }
+    $('ip').innerHTML = 'Ваш IP: ' + flag + ' <b>' + esc(r.ip) + '</b>';
   } catch { $('ip').textContent = 'IP не определён'; }
 }
 

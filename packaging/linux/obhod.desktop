@@ -8,4 +8,5 @@ Exec=/opt/obhod/obhod
 Icon=obhod
 Terminal=false
 Categories=Network;
+StartupWMClass=obhod
 Keywords=vpn;proxy;tor;dpi;

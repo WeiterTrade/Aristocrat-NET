@@ -78,11 +78,15 @@ func BuildTorrc(o TorOptions) (string, error) {
 		w("DataDirectory %s", o.DataDir)
 		w("Log notice stdout")
 		if o.GeoIPDir != "" {
-			if p := filepath.Join(o.GeoIPDir, "geoip"); fileExists(p) {
-				w("GeoIPFile %s", p)
-			}
-			if p := filepath.Join(o.GeoIPDir, "geoip6"); fileExists(p) {
-				w("GeoIPv6File %s", p)
+			for _, g := range []struct{ opt, file string }{{"GeoIPFile", "geoip"}, {"GeoIPv6File", "geoip6"}} {
+				p := filepath.Join(o.GeoIPDir, g.file)
+				check := p
+				if !filepath.IsAbs(p) && o.WorkDir != "" {
+					check = filepath.Join(o.WorkDir, p) // путь относительно рабочей папки tor
+				}
+				if fileExists(check) {
+					w("%s %s", g.opt, p)
+				}
 			}
 		}
 	}
@@ -205,8 +209,14 @@ func looksLikeAddr(s string) bool { return strings.ContainsAny(s, ".:[") }
 // fixWindowsExe: в pt_config.json для Windows путь бывает без .exe.
 func fixWindowsExe(line, baseDir string) string {
 	fields := strings.Fields(line)
-	if len(fields) >= 4 && !strings.HasSuffix(strings.ToLower(fields[3]), ".exe") &&
-		fileExists(filepath.Join(baseDir, fields[3]+".exe")) {
+	if len(fields) < 4 {
+		return line
+	}
+	exe := fields[3]
+	if !filepath.IsAbs(exe) {
+		exe = filepath.Join(baseDir, exe)
+	}
+	if !strings.HasSuffix(strings.ToLower(fields[3]), ".exe") && fileExists(exe+".exe") {
 		return strings.Replace(line, fields[3], fields[3]+".exe", 1)
 	}
 	return line
@@ -395,9 +405,14 @@ func explainTorExit(tail []string, err error) string {
 		strings.Contains(all, "clienttransportplugin"):
 		return "не запустился транспорт мостов (lyrebird) — попробуйте другой тип мостов"
 	}
+	// «[err] Reading config failed--see warnings above» — показываем само предупреждение.
 	for i := len(tail) - 1; i >= 0; i-- {
-		if strings.Contains(tail[i], "[err]") {
-			return tail[i]
+		l := tail[i]
+		if strings.Contains(l, "see warnings above") || strings.Contains(strings.ToLower(l), "clock") {
+			continue
+		}
+		if strings.Contains(l, "[warn]") || strings.Contains(l, "[err]") {
+			return strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(l, "[warn]"), "[err]"))
 		}
 	}
 	if len(tail) > 0 {

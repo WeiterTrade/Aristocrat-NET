@@ -140,32 +140,64 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Реальный внешний IP. Приложение исключено из VPN, поэтому запрос идёт напрямую. */
+    /** Реальный внешний IP и страна. Приложение исключено из VPN, поэтому запрос идёт напрямую. */
     private void loadIp() {
         lastIpAt = System.currentTimeMillis();
         ip.setText("Ваш IP: …");
         new Thread(() -> {
-            String found = null;
-            for (String u : new String[]{"https://api.ipify.org", "https://ipv4.icanhazip.com", "https://ifconfig.me/ip"}) {
+            String foundIp = null, cc = null;
+            String[][] services = {
+                    {"https://api.country.is/", "ip", "country"},
+                    {"https://ipwho.is/", "ip", "country_code"},
+                    {"https://ipinfo.io/json", "ip", "country"},
+            };
+            for (String[] svc : services) {
                 try {
-                    HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
-                    c.setConnectTimeout(6000);
-                    c.setReadTimeout(6000);
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
-                        String line = r.readLine();
-                        if (line != null && line.trim().matches("[0-9a-fA-F:.]{3,45}")) {
-                            found = line.trim();
-                            break;
-                        }
-                    } finally {
-                        c.disconnect();
+                    org.json.JSONObject j = new org.json.JSONObject(httpGet(svc[0]));
+                    String v = j.optString(svc[1], "");
+                    if (v.matches("[0-9a-fA-F:.]{3,45}")) {
+                        foundIp = v;
+                        cc = j.optString(svc[2], "");
+                        break;
                     }
                 } catch (Exception ignored) {
                 }
             }
-            final String res = found;
-            ui.post(() -> ip.setText(res != null ? "Ваш IP: " + res : getString(R.string.ip_unknown)));
+            if (foundIp == null) {
+                try {
+                    String v = httpGet("https://api.ipify.org").trim();
+                    if (v.matches("[0-9a-fA-F:.]{3,45}")) foundIp = v;
+                } catch (Exception ignored) {
+                }
+            }
+            final String text = foundIp == null ? getString(R.string.ip_unknown)
+                    : "Ваш IP: " + flagEmoji(cc) + foundIp;
+            ui.post(() -> ip.setText(text));
         }, "obhod-ip").start();
+    }
+
+    private static String httpGet(String u) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
+        c.setConnectTimeout(6000);
+        c.setReadTimeout(6000);
+        c.setRequestProperty("Accept", "application/json");
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder sb = new StringBuilder();
+            String l;
+            while ((l = r.readLine()) != null) sb.append(l);
+            return sb.toString();
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    /** «KZ» → 🇰🇿 (флаг из двух региональных символов Unicode). */
+    static String flagEmoji(String cc) {
+        if (cc == null || !cc.matches("[A-Za-z]{2}")) return "";
+        cc = cc.toUpperCase();
+        int a = 0x1F1E6 + (cc.charAt(0) - 'A');
+        int b = 0x1F1E6 + (cc.charAt(1) - 'A');
+        return new String(Character.toChars(a)) + new String(Character.toChars(b)) + " ";
     }
 
     @Override

@@ -16,6 +16,17 @@ license: MIT
 recommends:
   - xdg-utils
 
+# Окно программы — GTK3 + WebKitGTK 4.1 (есть в Ubuntu 22.04+, Linux Mint 21+, Debian 12, Fedora 36+).
+overrides:
+  deb:
+    depends:
+      - libgtk-3-0
+      - libwebkit2gtk-4.1-0
+  rpm:
+    depends:
+      - gtk3
+      - webkit2gtk4.1
+
 contents:
   - src: build/linux/obhod
     dst: /opt/obhod/obhod
