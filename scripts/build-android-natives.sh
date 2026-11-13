@@ -83,8 +83,16 @@ if grep -q '^#include LWIP_ERRNO_INCLUDE$' "$LWERR"; then
 fi
 echo "NDK: $NDK"
 echo "==> hev-socks5-tunnel (ndk-build)"
+# ndk-build при установке удаляет из папки вывода «чужие» .so (ядро и lyrebird),
+# поэтому собираем в отдельную папку и копируем только libhev-socks5-tunnel.so.
+NDKLIBS="$WORK/ndk-libs"
+rm -rf "$NDKLIBS"
 (cd "$MAIN" && "$NDK/ndk-build" -j"$(nproc)" NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk \
-   NDK_APPLICATION_MK=jni/Application.mk NDK_LIBS_OUT=jniLibs NDK_OUT="$WORK/ndk-obj")
+   NDK_APPLICATION_MK=jni/Application.mk NDK_LIBS_OUT="$NDKLIBS" NDK_OUT="$WORK/ndk-obj")
+for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+  mkdir -p "$JNI/$abi"
+  cp "$NDKLIBS/$abi/libhev-socks5-tunnel.so" "$JNI/$abi/"
+done
 
 # Запасной вариант: готовый lyrebird из Android-сборки Tor (dist.torproject.org).
 if [ -z "$LYRE" ]; then
