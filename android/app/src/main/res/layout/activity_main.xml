@@ -2,6 +2,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@drawable/sky"
     android:padding="16dp">
 
     <TextView
@@ -14,7 +15,7 @@
         android:focusable="true"
         android:padding="10dp"
         android:text="@string/about"
-        android:textColor="@color/muted"
+        android:textColor="#FFFFFF"
         android:textSize="15sp" />
 
     <LinearLayout
@@ -26,14 +27,18 @@
 
         <Button
             android:id="@+id/power"
-            android:layout_width="200dp"
-            android:layout_height="200dp"
+            android:layout_width="230dp"
+            android:layout_height="230dp"
             android:background="@drawable/power_off"
             android:focusable="true"
             android:text="@string/connect"
             android:textAllCaps="false"
+            android:shadowColor="#0B335C"
+            android:shadowDx="1"
+            android:shadowDy="2"
+            android:shadowRadius="2"
             android:textColor="#FFFFFF"
-            android:textSize="20sp" />
+            android:textSize="22sp" />
 
         <TextView
             android:id="@+id/status"
@@ -54,15 +59,20 @@
             android:paddingStart="24dp"
             android:paddingEnd="24dp"
             android:text="@string/sub_off"
-            android:textColor="@color/muted"
+            android:textColor="#DDEEFB"
             android:textSize="14sp" />
 
         <TextView
             android:id="@+id/ip"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:textColor="#E8EBEF"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/ip_pill"
+            android:paddingStart="18dp"
+            android:paddingTop="9dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="9dp"
+            android:textColor="#14273A"
             android:textSize="16sp" />
     </LinearLayout>
 

@@ -1,21 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Фокус (пульт TV) — белая обводка -->
+<!-- Кнопка-планета; при фокусе (пульт Android TV) и нажатии — белая обводка -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true">
-        <shape android:shape="oval">
-            <solid android:color="#59616D" />
-            <stroke android:width="6dp" android:color="#FFFFFF" />
-        </shape>
-    </item>
-    <item android:state_pressed="true">
-        <shape android:shape="oval">
-            <solid android:color="#59616D" />
-            <stroke android:width="6dp" android:color="#CCFFFFFF" />
-        </shape>
-    </item>
-    <item>
-        <shape android:shape="oval">
-            <solid android:color="#59616D" />
-        </shape>
-    </item>
+    <item android:state_focused="true" android:drawable="@drawable/planet_off_focus" />
+    <item android:state_pressed="true" android:drawable="@drawable/planet_off_focus" />
+    <item android:drawable="@drawable/planet_off" />
 </selector>

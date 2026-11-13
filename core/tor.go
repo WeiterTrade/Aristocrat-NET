@@ -22,7 +22,8 @@ import (
 
 // Типы мостов. В РФ/РК прямое подключение к Tor заблокировано, поэтому по умолчанию — snowflake.
 var BridgeNames = map[string]string{
-	"snowflake": "Snowflake (рекомендуется)",
+	"auto":      "Автовыбор (рекомендуется)",
+	"snowflake": "Snowflake",
 	"obfs4":     "obfs4",
 	"meek":      "meek (Azure)",
 	"custom":    "Свои мосты",
@@ -30,7 +31,8 @@ var BridgeNames = map[string]string{
 }
 
 // WebTunnel-мостов в Tor нет встроенных — их получают в @GetBridgesBot и вставляют в «Свои мосты».
-var bridgeOrder = []string{"snowflake", "obfs4", "meek", "custom", "none"}
+// «Автовыбор»: tor получает сразу все встроенные мосты (и свои, если указаны) и сам использует отвечающие.
+var bridgeOrder = []string{"auto", "snowflake", "obfs4", "meek", "custom", "none"}
 
 // PTConfig — формат pt_config.json из Tor Expert Bundle.
 type PTConfig struct {
@@ -114,7 +116,24 @@ func BuildTorrc(o TorOptions) (string, error) {
 			return "", err
 		}
 	}
-	if o.Bridges != "custom" {
+	if o.Bridges == "auto" {
+		if pt == nil {
+			return "", errors.New("нет pt_config.json со встроенными мостами")
+		}
+		// Свои мосты — первыми: они обычно надёжнее встроенных.
+		for _, l := range strings.Split(o.Custom, "\n") {
+			l = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "Bridge "))
+			if l != "" && !strings.HasPrefix(l, "#") {
+				lines = append(lines, l)
+			}
+		}
+		for _, k := range []string{"snowflake", "obfs4", "meek", "meek-azure"} {
+			lines = append(lines, pt.Bridges[k]...)
+		}
+		if len(lines) == 0 {
+			return "", errors.New("в pt_config.json нет встроенных мостов")
+		}
+	} else if o.Bridges != "custom" {
 		if pt == nil {
 			return "", errors.New("нет pt_config.json со встроенными мостами")
 		}
@@ -232,6 +251,7 @@ type Tor struct {
 	socks    string
 	status   string // off | starting | ready | error
 	progress int
+	changed  time.Time // когда прогресс последний раз менялся
 	errMsg   string
 	logf     func(string, ...any)
 	ready    chan struct{}
@@ -288,6 +308,17 @@ func (t *Tor) Status() (status string, progress int, errMsg string) {
 	return t.status, t.progress, t.errMsg
 }
 
+// Stalled — подключение Tor не продвигается дольше 90 секунд (мосты не отвечают).
+func (t *Tor) Stalled() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.status == "starting" && !t.external && time.Since(t.changed) > 90*time.Second
+}
+
+// StallHint — что посоветовать, если Tor не подключается.
+const StallHint = "Tor не может подключиться через встроенные мосты — их блокирует провайдер. " +
+	"Получите мосты WebTunnel или obfs4 в Telegram-боте @GetBridgesBot и вставьте их в настройках: Мосты Tor → «Свои мосты»."
+
 func (t *Tor) Enabled() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -342,7 +373,7 @@ func (t *Tor) Start(torExe, torrcPath, libDir, workDir, socks, pidFile string) e
 	var tail []string
 	t.mu.Lock()
 	t.cmd, t.socks, t.external = cmd, socks, false
-	t.status, t.progress, t.errMsg = "starting", 0, ""
+	t.status, t.progress, t.errMsg, t.changed = "starting", 0, "", time.Now()
 	t.ready = make(chan struct{})
 	t.mu.Unlock()
 	t.logf("Tor запускается…")
@@ -354,8 +385,8 @@ func (t *Tor) Start(torExe, torrcPath, libDir, workDir, socks, pidFile string) e
 			if m := reBootstrap.FindStringSubmatch(line); m != nil {
 				p, _ := strconv.Atoi(m[1])
 				t.mu.Lock()
-				if t.cmd == cmd {
-					t.progress = p
+				if t.cmd == cmd && p != t.progress {
+					t.progress, t.changed = p, time.Now()
 				}
 				t.mu.Unlock()
 				if p == 100 {

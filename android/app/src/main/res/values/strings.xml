@@ -30,13 +30,15 @@
         <item>tor</item>
     </string-array>
     <string-array name="bridge_names">
-        <item>Snowflake (рекомендуется)</item>
+        <item>Автовыбор (рекомендуется)</item>
+        <item>Snowflake</item>
         <item>obfs4</item>
         <item>meek (Azure)</item>
         <item>Свои мосты</item>
         <item>Без мостов</item>
     </string-array>
     <string-array name="bridge_values">
+        <item>auto</item>
         <item>snowflake</item>
         <item>obfs4</item>
         <item>meek</item>

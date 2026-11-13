@@ -12,7 +12,7 @@ final class Prefs {
 
     static String route(Context c) { return get(c).getString("route", "auto"); }
 
-    static String bridges(Context c) { return get(c).getString("bridges", "snowflake"); }
+    static String bridges(Context c) { return get(c).getString("bridges", "auto"); }
 
     static String custom(Context c) { return get(c).getString("custom", ""); }
 }

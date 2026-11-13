@@ -115,7 +115,7 @@ public class MainActivity extends Activity {
         switch (st) {
             case "on":
                 status.setText(R.string.status_on);
-                status.setTextColor(0xFF34C77B);
+                status.setTextColor(0xFFC8FFD8);
                 break;
             case "starting":
                 status.setText(R.string.status_starting);
@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
                 break;
             case "error":
                 status.setText("Ошибка: " + ObhodVpnService.error);
-                status.setTextColor(0xFFF97316);
+                status.setTextColor(0xFFFFE0B8);
                 break;
             default:
                 status.setText(R.string.status_off);
@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
                 }
             }
             final String text = foundIp == null ? getString(R.string.ip_unknown)
-                    : "Ваш IP: " + flagEmoji(cc) + foundIp;
+                    : flagEmoji(cc) + foundIp;
             ui.post(() -> ip.setText(text));
         }, "obhod-ip").start();
     }

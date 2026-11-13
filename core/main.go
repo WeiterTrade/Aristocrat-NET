@@ -33,12 +33,21 @@ import (
 
 const appName = "Obhod"
 
-var appVersion = "0.4.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.5.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
 //go:embed ui/index.html
 var indexHTML []byte
+
+//go:embed ui/planet-on.png
+var planetOnPNG []byte
+
+//go:embed ui/planet-off.png
+var planetOffPNG []byte
+
+//go:embed ui/logo.png
+var logoWebPNG []byte
 
 type Settings struct {
 	Port          int               `json:"port"`
@@ -50,10 +59,13 @@ type Settings struct {
 	DoH           string            `json:"doh"`
 	AutoStart     bool              `json:"auto_start"`
 	Learned       map[string]string `json:"learned"`
+	Ver           int               `json:"ver"`
 }
 
+const settingsVer = 2
+
 func defaultSettings() Settings {
-	return Settings{Port: 8881, Mode: "auto", Route: RouteAuto, Bridges: "snowflake",
+	return Settings{Port: 8881, Mode: "auto", Route: RouteAuto, Bridges: "auto",
 		SysProxy: true, DoH: "cloudflare", AutoStart: true}
 }
 
@@ -106,6 +118,11 @@ func (a *App) load() {
 	if b, err := os.ReadFile(filepath.Join(a.dir, "settings.json")); err == nil {
 		_ = json.Unmarshal(b, &a.s)
 	}
+	// v2: прежний вариант по умолчанию «Snowflake» часто не подключается — переводим на «Автовыбор».
+	if a.s.Ver < 2 && a.s.Bridges == "snowflake" {
+		a.s.Bridges = "auto"
+	}
+	a.s.Ver = settingsVer
 	a.s.normalize()
 }
 
@@ -317,6 +334,19 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data: https://flagcdn.com")
 		_, _ = w.Write(indexHTML)
 	})
+	// Картинки интерфейса (планета, эмблема).
+	for path, data := range map[string][]byte{"/planet-on.png": planetOnPNG, "/planet-off.png": planetOffPNG, "/logo.png": logoWebPNG} {
+		data := data
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			if r.Host != a.addr {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Cache-Control", "max-age=86400")
+			_, _ = w.Write(data)
+		})
+	}
 	// /ping — чтобы повторно запущенная копия узнала, что «Обход» уже работает.
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		if r.Host != a.addr {

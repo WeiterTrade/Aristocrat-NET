@@ -309,3 +309,23 @@ func TestExplainTorExit(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoBridges(t *testing.T) {
+	dir := t.TempDir()
+	ptPath := filepath.Join(dir, "pt_config.json")
+	os.WriteFile(ptPath, []byte(samplePT), 0o600)
+	rc, err := BuildTorrc(TorOptions{Bridges: "auto", Custom: "webtunnel [2001:db8::2]:443 FP url=https://w.example/x ver=0.0.1",
+		SocksAddr: torSocksAddr, PTConfigPath: ptPath, PTDir: "pt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Bridge webtunnel", "Bridge snowflake", "Bridge obfs4 192.0.2.1", "Bridge meek_lite",
+		"ClientTransportPlugin snowflake exec", "webtunnel"} {
+		if !strings.Contains(rc, want) {
+			t.Errorf("нет %q в\n%s", want, rc)
+		}
+	}
+	if strings.Index(rc, "Bridge webtunnel") > strings.Index(rc, "Bridge snowflake") {
+		t.Error("свои мосты должны идти первыми")
+	}
+}

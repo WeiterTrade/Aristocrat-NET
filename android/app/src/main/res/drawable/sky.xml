@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Небо с лучами: картинка по центру, края — цветом неба -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><color android:color="#125AA8" /></item>
+    <item><bitmap android:src="@drawable/sky_img" android:gravity="center" /></item>
+</layer-list>

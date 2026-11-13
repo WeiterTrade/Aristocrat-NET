@@ -4,9 +4,9 @@
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorAccent">@color/accent</item>
     </style>
-    <color name="bg">#0F1216</color>
-    <color name="card">#171B21</color>
-    <color name="accent">#34C77B</color>
-    <color name="muted">#98A1AD</color>
+    <color name="bg">#0B2238</color>
+    <color name="card">#12324F</color>
+    <color name="accent">#2CB88B</color>
+    <color name="muted">#9FB3C6</color>
     <color name="off">#59616D</color>
 </resources>
