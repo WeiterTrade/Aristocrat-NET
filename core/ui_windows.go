@@ -414,12 +414,16 @@ func (u *nativeUI) build() error {
 		Icon:       icon,
 		Size:       dcl.Size{Width: 440, Height: 660},
 		Background: dcl.SolidColorBrush{Color: cNavy.walk()}, // это цвет рамки окна (1 пиксель)
-		Layout:     dcl.VBox{Margins: dcl.Margins{Left: 1, Right: 1, Bottom: 1}, SpacingZero: true},
+		// Своя раскладка: заголовок ровно 40 точек, содержимое — всё остальное.
+		Layout: frameLayoutDecl{title: func() win.HWND {
+			if u.title == nil {
+				return 0
+			}
+			return u.title.Handle()
+		}},
 		Children: []dcl.Widget{
 			dcl.CustomWidget{
 				AssignTo:            &u.title,
-				MinSize:             dcl.Size{Height: 40},
-				MaxSize:             dcl.Size{Height: 40},
 				PaintPixels:         u.paintTitle,
 				InvalidatesOnResize: true,
 				DoubleBuffering:     true,
@@ -517,6 +521,11 @@ func (u *nativeUI) applyFrame() {
 	win.SetWindowLong(h, win.GWL_STYLE, style)
 	s := u.dpiScale()
 	win.SetWindowPos(h, 0, 0, 0, int32(440*s), int32(660*s), win.SWP_FRAMECHANGED|win.SWP_NOMOVE|win.SWP_NOZORDER)
+	// После смены стиля клиентская область стала больше — пересчитываем раскладку,
+	// чтобы снизу не оставалось пустой полосы.
+	u.mw.RequestLayout()
+	u.title.Invalidate()
+	u.home.Invalidate()
 }
 
 func (u *nativeUI) workArea() win.RECT {

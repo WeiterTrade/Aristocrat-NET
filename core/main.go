@@ -33,7 +33,7 @@ import (
 
 const appName = "Obhod"
 
-var appVersion = "0.5.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.5.1" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
