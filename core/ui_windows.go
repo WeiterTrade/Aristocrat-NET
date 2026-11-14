@@ -1177,6 +1177,7 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 		btnTest                            *walk.PushButton
 		leHost                             *walk.LineEdit
 		chkSys, chkAuto                    *walk.CheckBox
+		chkLocal, chkGeoTor                *walk.CheckBox
 		nePort                             *walk.NumberEdit
 		lblTor                             *walk.Label
 		ready                              bool
@@ -1195,6 +1196,8 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 		s.DoH = dohIDs[cbDoH.CurrentIndex()]
 		s.SysProxy = chkSys.Checked()
 		s.AutoStart = chkAuto.Checked()
+		s.KeepLocal = chkLocal.Checked()
+		s.GeoTor = chkGeoTor.Checked()
 		s.Port = int(nePort.Value())
 		_, needTor := s.needs()
 		cbBridges.SetEnabled(needTor)
@@ -1321,6 +1324,10 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 					s.CustomBridges = strings.ReplaceAll(teCustom.Text(), "\r\n", "\n")
 					go func() { _ = u.a.applySettings(s) }()
 				}},
+				dcl.CheckBox{AssignTo: &chkLocal, ColumnSpan: 2, Checked: st.KeepLocal, OnCheckedChanged: apply,
+					Text: "Российские и казахстанские сайты — напрямую, с настоящим IP (банки, госуслуги, Яндекс, VK…)"},
+				dcl.CheckBox{AssignTo: &chkGeoTor, ColumnSpan: 2, Checked: st.GeoTor, OnCheckedChanged: apply,
+					Text: "В России: Spotify и другие сервисы, закрытые для России, — через Tor (даже в «Авто»)"},
 				dcl.Label{AssignTo: &lblTor, ColumnSpan: 2, TextColor: cOk.walk()},
 			},
 		},

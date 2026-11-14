@@ -187,26 +187,16 @@ public class ObhodVpnService extends VpnService {
             boolean useTor = Prefs.needTor(this);
             File torLog = new File(data, "tor.log");
 
+            File geo = prepareGeo(data);
+            torCoreBin = coreBin;
+            torLyrebird = lyrebird;
+            torData = data;
+            torLogFile = torLog;
+
             // 1. Tor: torrc собирает ядро (те же правила мостов, что и на ПК), запускает TorService.
             //    Журнал tor пишет в файл — ядро читает его (прогресс подключения и причины ошибок).
             if (useTor) {
-                try {
-                    //noinspection ResultOfMethodCallIgnored
-                    torLog.delete();
-                    torPhase = 0;
-                    torCoreBin = coreBin;
-                    torLyrebird = lyrebird;
-                    torData = data;
-                    torLogFile = torLog;
-                    killTorProcess(); // tor нельзя дважды запустить в одном процессе — начинаем с чистого
-                    writeTorrc(coreBin, lyrebird, data, torLog);
-                    torBound = bindService(new Intent(this, TorService.class), torConn, BIND_AUTO_CREATE);
-                    torState = "Tor подключается…";
-                } catch (Exception e) {
-                    torState = "Tor не запущен: " + e.getMessage();
-                    log(torState);
-                    useTor = false;
-                }
+                useTor = startTor();
             }
 
             // 2. Ядро.
@@ -221,12 +211,17 @@ public class ObhodVpnService extends VpnService {
             cmd.add("tor".equals(route) && !useTor ? "dpi" : route);
             cmd.add("-heavy");
             cmd.add(Prefs.heavy(this));
-            if (useTor) {
-                cmd.add("-tor-socks");
-                cmd.add(TOR_SOCKS);
-                cmd.add("-tor-log");
-                cmd.add(torLog.getAbsolutePath());
-            }
+            // Адрес Tor передаём всегда: в России ядро попросит запустить Tor для Spotify.
+            cmd.add("-tor-socks");
+            cmd.add(TOR_SOCKS);
+            cmd.add("-tor-log");
+            cmd.add(torLog.getAbsolutePath());
+            cmd.add("-geoip-dir");
+            cmd.add(geo.getAbsolutePath());
+            cmd.add("-keep-local");
+            cmd.add(Prefs.keepLocal(this) ? "on" : "off");
+            cmd.add("-geo-tor");
+            cmd.add(Prefs.geoTor(this) ? "on" : "off");
             ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true).directory(data);
             Map<String, String> env = pb.environment();
             env.put("SSL_CERT_DIR", "/system/etc/security/cacerts");
@@ -297,20 +292,45 @@ public class ObhodVpnService extends VpnService {
         }
     }
 
-    private void writeTorrc(File coreBin, File lyrebird, File data, File torLog) throws Exception {
-        File pt = new File(data, "pt_config.json");
-        copyAsset("pt_config.json", pt);
-        // Файлы GeoIP нужны tor для выбора страны выхода.
+    /** Файлы GeoIP: ядру — чтобы узнавать российские и казахстанские сайты, tor — для выбора страны. */
+    private File prepareGeo(File data) {
         File geo = new File(data, "geoip-data");
         //noinspection ResultOfMethodCallIgnored
         geo.mkdirs();
         for (String g : new String[]{"geoip", "geoip6"}) {
+            File f = new File(geo, g);
+            if (f.length() > 0) continue; // уже скопирован
             try {
-                copyAsset(g, new File(geo, g));
+                copyAsset(g, f);
             } catch (IOException e) {
-                log("Нет файла " + g + " — выбор страны Tor недоступен");
+                log("Нет файла " + g + " — страны определяются только по домену");
             }
         }
+        return geo;
+    }
+
+    /** Запускает TorService (tor) с torrc, собранным ядром. */
+    private synchronized boolean startTor() {
+        try {
+            //noinspection ResultOfMethodCallIgnored
+            torLogFile.delete();
+            torPhase = 0;
+            killTorProcess(); // tor нельзя дважды запустить в одном процессе — начинаем с чистого
+            writeTorrc(torCoreBin, torLyrebird, torData, torLogFile);
+            torBound = bindService(new Intent(this, TorService.class), torConn, BIND_AUTO_CREATE);
+            torState = "Tor подключается…";
+            return true;
+        } catch (Exception e) {
+            torState = "Tor не запущен: " + e.getMessage();
+            log(torState);
+            return false;
+        }
+    }
+
+    private void writeTorrc(File coreBin, File lyrebird, File data, File torLog) throws Exception {
+        File pt = new File(data, "pt_config.json");
+        copyAsset("pt_config.json", pt);
+        File geo = new File(data, "geoip-data");
         File custom = new File(data, "custom_bridges.txt");
         try (FileWriter w = new FileWriter(custom)) {
             w.write(Prefs.custom(this));
@@ -373,6 +393,7 @@ public class ObhodVpnService extends VpnService {
                     log(l);
                     String mm = l.replaceFirst("^\\d\\d:\\d\\d:\\d\\d ", "");
                     if (mm.startsWith("Tor: через snowflake не подключается")) switchBridges(1);
+                    else if (mm.startsWith("Страна по настоящему IP: RU")) startTorForRussia();
                     else if (mm.startsWith("Tor: запасные мосты тоже")) switchBridges(0);
                     String m = l.replaceFirst("^\\d\\d:\\d\\d:\\d\\d ", "");
                     if (m.startsWith("Tor подключён")) torState = "Tor подключён";
@@ -475,6 +496,20 @@ public class ObhodVpnService extends VpnService {
                 log("Не удалось прочитать системный журнал: " + e.getMessage());
             }
         }, "obhod-tor-crash").start();
+    }
+
+    /** В России Tor нужен и в режиме «Авто» без Tor — для Spotify и подобных сервисов. */
+    private static void startTorForRussia() {
+        final ObhodVpnService s = instance;
+        if (s == null || !Prefs.geoTor(s) || "dpi".equals(Prefs.route(s))) return;
+        new Thread(() -> {
+            synchronized (s) {
+                if (!s.torBound && s.torCoreBin != null && "on".equals(state)) {
+                    log("Россия: запускаю Tor для Spotify и подобных сервисов");
+                    s.startTor();
+                }
+            }
+        }, "obhod-tor-ru").start();
     }
 
     /** Автовыбор мостов на Android: ядро сообщает, что Tor застрял, — перезапускаем TorService с другими мостами. */

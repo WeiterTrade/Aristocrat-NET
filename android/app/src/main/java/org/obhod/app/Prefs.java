@@ -16,15 +16,28 @@ final class Prefs {
      * сервисы с привязкой к стране вроде Яндекс Музыки). Если приложение не установлено — пропускается.
      */
     static final Set<String> DEFAULT_EXCLUDED = new HashSet<>(Arrays.asList(
-            "ru.yandex.music",
-            "com.yandex.music",
-            "kz.kaspi.mobile",
-            "ru.sberbankmobile",
-            "com.idamob.tinkoff.android",
-            "ru.vtb24.mobilebanking.android",
-            "ru.alfabank.mobile.android",
-            "ru.rostel",
-            "kz.egov.mobile"));
+            // Банки России
+            "ru.sberbankmobile", "ru.sberbank.sberbankid", "com.idamob.tinkoff.android", "ru.tinkoff.mb",
+            "ru.vtb24.mobilebanking.android", "ru.alfabank.mobile.android", "ru.gazprombank.android.mobilebank.app",
+            "ru.raiffeisennews", "ru.rosbank.android", "ru.psbank.mobile", "ru.mkb.mobile", "ru.sovcombank.halva",
+            "ru.pochtabank.pochtaapp", "ru.mtsbank.mobile", "ru.ozon.fintech.finance", "com.openbank",
+            // Банки Казахстана
+            "kz.kaspi.mobile", "kz.halyk.onlinebank", "kz.homebank.mobile", "kz.bcc.starbanking", "kz.jusan.mobile",
+            "kz.forte.mobile", "kz.freedombank.mobile", "kz.berekebank.mobile",
+            // Госуслуги и налоги
+            "ru.rostel", "ru.gosuslugi.mobile", "ru.nalog.www", "com.gnivts.selfemployed", "ru.mos.polls",
+            "kz.egov.mobile", "kz.gov.egov", "kz.nitec.egov.mgov",
+            // Маркетплейсы, доставка, такси, связь
+            "ru.ozon.app.android", "com.wildberries.ru", "com.avito.android", "ru.beru.android", "ru.yandex.taxi",
+            "ru.yandex.yandexmaps", "ru.yandex.yandexnavi", "ru.dublgis.dgismobile", "com.deliveryclub",
+            "ru.mts.mymts", "ru.megafon.mlk", "ru.beeline.services", "ru.tele2.mytele2", "kz.beeline.odp",
+            "kz.kcell.mykcell", "kz.tele2.mytele2", "ru.vk.store", "ru.oneme.app",
+            // Сервисы с привязкой к стране
+            "ru.yandex.music", "com.yandex.music", "ru.kinopoisk", "ru.rutube.app", "ru.yandex.disk",
+            "ru.gosuslugi.pos", "kz.chocofamily.chocotravel"));
+
+    /** Версия списка по умолчанию: новые пункты добавляются пользователям, у которых список уже сохранён. */
+    private static final int EXCLUDED_VER = 2;
 
     static SharedPreferences get(Context c) {
         return c.getSharedPreferences("obhod", Context.MODE_PRIVATE);
@@ -51,11 +64,24 @@ final class Prefs {
     }
 
     static Set<String> excluded(Context c) {
-        Set<String> s = get(c).getStringSet("excluded", null);
-        return s == null ? new HashSet<>(DEFAULT_EXCLUDED) : new HashSet<>(s);
+        SharedPreferences p = get(c);
+        Set<String> s = p.getStringSet("excluded", null);
+        if (s == null) return new HashSet<>(DEFAULT_EXCLUDED);
+        Set<String> out = new HashSet<>(s);
+        if (p.getInt("excluded_ver", 1) < EXCLUDED_VER) {
+            out.addAll(DEFAULT_EXCLUDED);
+            p.edit().putStringSet("excluded", out).putInt("excluded_ver", EXCLUDED_VER).apply();
+        }
+        return out;
     }
 
+    /** Российские и казахстанские сайты — напрямую, с настоящим IP. */
+    static boolean keepLocal(Context c) { return get(c).getBoolean("keep_local", true); }
+
+    /** В России Spotify и подобные — через Tor. */
+    static boolean geoTor(Context c) { return get(c).getBoolean("geo_tor", true); }
+
     static void setExcluded(Context c, Set<String> s) {
-        get(c).edit().putStringSet("excluded", new HashSet<>(s)).apply();
+        get(c).edit().putStringSet("excluded", new HashSet<>(s)).putInt("excluded_ver", EXCLUDED_VER).apply();
     }
 }

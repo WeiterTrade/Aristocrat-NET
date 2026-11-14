@@ -126,6 +126,8 @@
         <button class="btn ghost" id="saveCustom" style="margin-top:6px">Сохранить мосты</button>
       </div>
     </div>
+    <div class="opt"><label class="l"><input type="checkbox" id="keepLocal"> Российские и казахстанские сайты — напрямую<br><span class="hint">С настоящим IP даже в режимах Tor и WARP: банки, госуслуги, Яндекс, VK, маркетплейсы</span></label></div>
+    <div class="opt"><label class="l"><input type="checkbox" id="geoTor"> В России: Spotify — через Tor<br><span class="hint">Сервисы, которые сами закрылись для России, открываются через Tor даже в «Авто». В Казахстане не действует</span></label></div>
     <div class="hint" id="torline" style="margin-top:10px;white-space:pre-line"></div>
   </div>
 
@@ -223,6 +225,7 @@ function render(s) {
   $('customBox').classList.toggle('hidden', st.bridges !== 'custom');
   if (document.activeElement !== $('custom')) $('custom').value = st.custom_bridges || '';
   $('torline').textContent = torText(s);
+  $('keepLocal').checked = st.keep_local; $('geoTor').checked = st.geo_tor;
   $('doh').value = st.doh; $('sys').checked = st.sys_proxy; $('auto').checked = st.auto_start;
   if (document.activeElement !== $('port')) $('port').value = st.port;
   $('portLbl').textContent = st.port;
@@ -282,6 +285,8 @@ $('country').onchange = e => save({ tor_country: e.target.value });
 $('saveCustom').onclick = () => save({ custom_bridges: $('custom').value });
 $('doh').onchange = e => save({ doh: e.target.value });
 $('sys').onchange = e => save({ sys_proxy: e.target.checked });
+$('keepLocal').onchange = e => save({ keep_local: e.target.checked });
+$('geoTor').onchange = e => save({ geo_tor: e.target.checked });
 $('auto').onchange = e => save({ auto_start: e.target.checked });
 $('port').onchange = e => save({ port: parseInt(e.target.value, 10) || 8881 });
 $('logBox').ontoggle = refresh;

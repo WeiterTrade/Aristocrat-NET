@@ -81,7 +81,7 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 	var out net.PacketConn
 	switch {
 	case route == RouteTor:
-		out = nil // UDP не пропускаем
+		out = nil // UDP не пропускаем (кроме местных адресов — см. direct ниже)
 	case route == RouteWarp:
 		if e.warpOn() && e.Warp.WaitReady(15*time.Second) {
 			out, err = e.Warp.ListenUDP()
@@ -102,6 +102,15 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 	la := lc.LocalAddr().(*net.UDPAddr)
 	if _, err := c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, byte(la.Port >> 8), byte(la.Port)}); err != nil {
 		return
+	}
+
+	// Отдельный прямой сокет — для российских и казахстанских адресов в режимах Tor и WARP.
+	var direct net.PacketConn
+	if route == RouteTor || route == RouteWarp {
+		if d, err := net.ListenUDP("udp", nil); err == nil {
+			direct = d
+			defer d.Close()
+		}
 	}
 
 	var (
@@ -147,9 +156,6 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 			mu.Lock()
 			client = from
 			mu.Unlock()
-			if out == nil {
-				continue
-			}
 			host, port, hl, ok := udpHeader(buf[:n])
 			if !ok || port == 0 || (e.BlockQUIC && port == 443) {
 				continue
@@ -158,34 +164,45 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 			if ip == nil || (ip.IsLoopback() && port == e.selfPt) {
 				continue
 			}
+			dst := out
+			if direct != nil && e.Local.DirectIP(ip) {
+				dst = direct
+			}
+			if dst == nil {
+				continue
+			}
 			touch()
-			_, _ = out.WriteTo(buf[hl:n], &net.UDPAddr{IP: ip, Port: port})
+			_, _ = dst.WriteTo(buf[hl:n], &net.UDPAddr{IP: ip, Port: port})
 		}
 	}()
 
 	// Интернет → клиент.
-	if out != nil {
-		go func() {
-			buf := make([]byte, 64*1024)
-			for {
-				n, from, err := out.ReadFrom(buf)
-				if err != nil {
-					return
-				}
-				ua, ok := from.(*net.UDPAddr)
-				if !ok {
-					continue
-				}
-				mu.Lock()
-				dst := client
-				mu.Unlock()
-				if dst == nil {
-					continue
-				}
-				touch()
-				_, _ = lc.WriteToUDP(udpPacket(ua, buf[:n]), dst)
+	back := func(pc net.PacketConn) {
+		buf := make([]byte, 64*1024)
+		for {
+			n, from, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
 			}
-		}()
+			ua, ok := from.(*net.UDPAddr)
+			if !ok {
+				continue
+			}
+			mu.Lock()
+			dst := client
+			mu.Unlock()
+			if dst == nil {
+				continue
+			}
+			touch()
+			_, _ = lc.WriteToUDP(udpPacket(ua, buf[:n]), dst)
+		}
+	}
+	if out != nil {
+		go back(out)
+	}
+	if direct != nil {
+		go back(direct)
 	}
 
 	// Ассоциация живёт, пока открыто управляющее TCP-соединение (и не простаивает слишком долго).

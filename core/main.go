@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	_ "embed"
@@ -25,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -33,7 +35,7 @@ import (
 
 const appName = "Obhod"
 
-var appVersion = "0.6.3" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.7.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -60,15 +62,17 @@ type Settings struct {
 	SysProxy      bool              `json:"sys_proxy"`
 	DoH           string            `json:"doh"`
 	AutoStart     bool              `json:"auto_start"`
+	KeepLocal     bool              `json:"keep_local"` // российские и казахстанские сайты — напрямую, с настоящим IP
+	GeoTor        bool              `json:"geo_tor"`    // в России: Spotify и др. закрытые для России сервисы — через Tor
 	Learned       map[string]string `json:"learned"`
 	Ver           int               `json:"ver"`
 }
 
-const settingsVer = 3
+const settingsVer = 4
 
 func defaultSettings() Settings {
 	return Settings{Port: 8881, Mode: "auto", Route: RouteAuto, Heavy: HeavyWarpTor, Bridges: "auto",
-		SysProxy: true, DoH: "cloudflare", AutoStart: true}
+		SysProxy: true, DoH: "cloudflare", AutoStart: true, KeepLocal: true, GeoTor: true}
 }
 
 func (s *Settings) normalize() {
@@ -108,6 +112,8 @@ type App struct {
 	torPhase int        // этап автовыбора мостов (см. TorOptions.AutoPhase)
 	warp     *Warp
 	torSocks string // внешний Tor (Android)
+	country  string // страна пользователя по настоящему IP ("RU", "KZ"…)
+	geo      *GeoIP
 	token    string
 	addr     string
 	logs     []string
@@ -136,6 +142,10 @@ func (a *App) load() {
 		a.s.Bridges = "auto"
 	}
 	// v3: появился WARP — по умолчанию сначала WARP, затем Tor.
+	// v4: местные сайты напрямую и Spotify через Tor — включены по умолчанию.
+	if a.s.Ver < 4 {
+		a.s.KeepLocal, a.s.GeoTor = true, true
+	}
 	if a.s.Ver < 3 {
 		a.s.Heavy = HeavyWarpTor
 	}
@@ -163,6 +173,11 @@ func (a *App) startTor() {
 	a.mu.Lock()
 	bridges, custom, country := a.s.Bridges, a.s.CustomBridges, a.s.TorCountry
 	a.mu.Unlock()
+	// Tor уже работает с теми же настройками — не трогаем.
+	key := fmt.Sprintf("%s|%s|%s|%d", bridges, custom, country, a.torPhase)
+	if a.tor.Enabled() && key == a.torRC {
+		return
+	}
 	a.torErr = ""
 	paths, err := FindTor()
 	if err != nil {
@@ -195,6 +210,17 @@ func (a *App) startTor() {
 		socks = l.Addr().String()
 		l.Close()
 	}
+	// Свои мосты: недоступные убираем, быстрые — первыми (Tor подключается и работает быстрее).
+	if bridges == "custom" || bridges == "auto" {
+		custom = rankBridges(custom, func(ctx context.Context, addr string) (net.Conn, error) {
+			h, p, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			port, _ := strconv.Atoi(p)
+			return a.eng.dial(ctx, h, port)
+		}, a.logf)
+	}
 	torrc, err := BuildTorrc(TorOptions{
 		Bridges: bridges, Custom: custom, SocksAddr: socks, DataDir: "tor-data",
 		PTConfigPath: paths.PTConfig, PTDir: ptDir, WorkDir: a.dir, GeoIPDir: geoDir, ExitCountry: country,
@@ -205,12 +231,7 @@ func (a *App) startTor() {
 		a.logf("Tor: %v", err)
 		return
 	}
-	// Порт SOCKS выбирается случайно — для сравнения настроек его не учитываем.
-	same := strings.Replace(torrc, socks, "", 1)
-	if a.tor.Enabled() && same == a.torRC {
-		return
-	}
-	a.torRC = same
+	a.torRC = key
 	torrcPath := filepath.Join(a.dir, "torrc")
 	if err := os.WriteFile(torrcPath, []byte(torrc), 0o600); err != nil {
 		a.torErr = err.Error()
@@ -235,6 +256,7 @@ func (a *App) applySettings(s Settings) error {
 	a.mu.Lock()
 	old := a.s
 	a.s.Port, a.s.Mode, a.s.Route, a.s.SysProxy, a.s.DoH, a.s.AutoStart = s.Port, s.Mode, s.Route, s.SysProxy, s.DoH, s.AutoStart
+	a.s.KeepLocal, a.s.GeoTor = s.KeepLocal, s.GeoTor
 	a.s.Bridges, a.s.CustomBridges, a.s.Heavy, a.s.TorCountry = s.Bridges, s.CustomBridges, s.Heavy, s.TorCountry
 	a.mu.Unlock()
 	a.eng.Mode.Store(s.Mode)
@@ -317,12 +339,73 @@ func (a *App) watchTorBridges() {
 	}
 }
 
+// needs — нужны ли WARP и Tor: по настройкам, а в России Tor нужен ещё и для Spotify
+// (если только пользователь не выбрал «Только обход DPI»).
+func (a *App) needs() (warp, tor bool) {
+	a.mu.Lock()
+	st, cc := a.s, a.country
+	a.mu.Unlock()
+	warp, tor = st.needs()
+	if st.GeoTor && cc == "RU" && st.Route != RouteDPI {
+		tor = true
+	}
+	return warp, tor
+}
+
+// detectCountry узнаёт страну пользователя по настоящему IP (нужно для правила «Spotify — через Tor в России»).
+func (a *App) detectCountry() {
+	for delay := 5 * time.Second; ; delay *= 2 {
+		_, cc, err := publicIP()
+		if err == nil && cc != "" {
+			cc = strings.ToUpper(cc)
+			a.mu.Lock()
+			changed := a.country != cc
+			a.country = cc
+			a.mu.Unlock()
+			if changed {
+				a.logf("Страна по настоящему IP: %s", cc)
+				if a.eng.Running() {
+					a.startUpstreams(false)
+				}
+			}
+			delay = 30 * time.Minute / 2 // потом перепроверяем раз в полчаса (сеть могла смениться)
+		}
+		if delay > 30*time.Minute {
+			delay = 30 * time.Minute
+		}
+		time.Sleep(delay)
+	}
+}
+
+// userCountry — страна пользователя по настоящему IP ("" — ещё не известна).
+func (a *App) userCountry() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.country
+}
+
+// loadGeoIP загружает базу стран (файл geoip из Tor) для правила «местные сайты напрямую».
+func (a *App) loadGeoIP(dir string) {
+	var cands []string
+	if dir != "" {
+		cands = append(cands, filepath.Join(dir, "geoip"))
+	}
+	cands = append(cands, filepath.Join(a.dir, "geoip", "geoip"))
+	if p, err := FindTor(); err == nil && p.GeoIPDir != "" {
+		cands = append(cands, filepath.Join(p.GeoIPDir, "geoip"))
+	}
+	for _, c := range cands {
+		if err := a.geo.Load(c); err == nil && a.geo.Loaded() {
+			return
+		}
+	}
+	a.logf("База стран (GeoIP) не найдена — местные сайты определяются только по домену")
+}
+
 // startUpstreams запускает или останавливает WARP и Tor под текущие настройки.
 // restartTor — перезапустить Tor (сменились мосты).
 func (a *App) startUpstreams(restartTor bool) {
-	a.mu.Lock()
-	needWarp, needTor := a.s.needs()
-	a.mu.Unlock()
+	needWarp, needTor := a.needs()
 	if needWarp {
 		a.warp.Start()
 	} else {
@@ -363,7 +446,7 @@ func routeSummary(s Settings) string {
 
 // upstreamLines — состояние WARP и Tor для интерфейса: обычные строки и предупреждения.
 func (a *App) upstreamLines() (lines, warns []string) {
-	needW, needT := a.settings().needs()
+	needW, needT := a.needs()
 	if needW {
 		switch ws, we := a.warp.Status(); ws {
 		case "ready":
@@ -630,6 +713,8 @@ func main() {
 		torCountry = flag.String("tor-country", "", "страна выхода из Tor: de, nl, us… или any")
 		torPhase   = flag.Int("tor-phase", 0, "этап автовыбора мостов: 0 — snowflake, 1 — obfs4 и meek (для -write-torrc)")
 		geoipDir   = flag.String("geoip-dir", "", "папка с файлами geoip/geoip6 (Android)")
+		keepLocal  = flag.String("keep-local", "", "российские и казахстанские сайты напрямую: on | off")
+		geoTor     = flag.String("geo-tor", "", "в России Spotify и подобное через Tor: on | off")
 		torLog     = flag.String("tor-log", "", "журнал внешнего Tor (Android): torrc пишет его, ядро читает")
 		stratFlag  = flag.String("strategy", "", "метод обхода DPI: auto | tlsrec | split | ...")
 		dohFlag    = flag.String("doh", "", "DoH: cloudflare | google | quad9")
@@ -662,6 +747,12 @@ func main() {
 	if *heavyFlag != "" {
 		a.s.Heavy = *heavyFlag
 	}
+	if *keepLocal != "" {
+		a.s.KeepLocal = *keepLocal == "on"
+	}
+	if *geoTor != "" {
+		a.s.GeoTor = *geoTor == "on"
+	}
 	if *stratFlag != "" {
 		a.s.Mode = *stratFlag
 	}
@@ -685,7 +776,11 @@ func main() {
 
 	// Android: приложение просит собрать torrc для TorService.
 	if *writeTorrc != "" {
-		torrc, err := BuildTorrc(TorOptions{Bridges: a.s.Bridges, Custom: a.s.CustomBridges, SocksAddr: torSocksAddr,
+		custom := a.s.CustomBridges
+		if a.s.Bridges == "custom" || a.s.Bridges == "auto" {
+			custom = rankBridges(custom, nil, func(f string, args ...any) { fmt.Printf(f+"\n", args...) })
+		}
+		torrc, err := BuildTorrc(TorOptions{Bridges: a.s.Bridges, Custom: custom, SocksAddr: torSocksAddr,
 			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true, LogFile: *torLog,
 			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir, AutoPhase: *torPhase})
 		if err != nil {
@@ -710,6 +805,15 @@ func main() {
 	a.warp.DialTLS = a.eng.dialTLSBypass
 	go a.watchTorBridges()
 	a.eng.Warp = a.warp
+	a.geo = &GeoIP{}
+	a.eng.Local = &Local{
+		Geo:         a.geo,
+		Enabled:     func() bool { return a.settings().KeepLocal },
+		UserCountry: a.userCountry,
+		Resolve:     a.res.Lookup,
+	}
+	go a.loadGeoIP(*geoipDir)
+	go a.detectCountry()
 	a.eng.BlockQUIC = true
 	a.torSocks = *torSocks
 	a.eng.Mode.Store(a.s.Mode)

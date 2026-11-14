@@ -15,6 +15,8 @@
     <string name="bridges_label">Мосты Tor</string>
     <string name="country_label">Страна IP через Tor (режим «Всё через Tor»; WARP страну не меняет)</string>
     <string name="heavy_label">Если сайт заблокирован по IP</string>
+    <string name="keep_local">Российские и казахстанские сайты — напрямую, с настоящим IP (даже в режимах Tor и WARP)</string>
+    <string name="geo_tor">В России: Spotify и другие сервисы, закрытые для России, — через Tor (даже в «Авто»)</string>
     <string name="apps_label">Приложения мимо «Обхода»</string>
     <string name="apps_hint">Банки, госуслуги, Яндекс Музыка и другие сервисы с привязкой к стране работают напрямую, как без «Обхода».</string>
     <string name="apps_button">Выбрать приложения</string>

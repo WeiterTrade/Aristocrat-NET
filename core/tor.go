@@ -100,6 +100,11 @@ func BuildTorrc(o TorOptions) (string, error) {
 	w("SOCKSPort %s", o.SocksAddr)
 	w("ClientOnly 1")
 	w("AvoidDiskWrites 1")
+	// Скорость: уже построенные цепочки живут дольше (меньше пауз на построение новых),
+	// служебный «шум» соединения уменьшен (экономит трафик на мобильном интернете).
+	w("MaxCircuitDirtiness 900")
+	w("ReducedConnectionPadding 1")
+	w("KeepalivePeriod 60")
 	if o.ForAndroid && o.LogFile != "" {
 		w("Log notice file %s", o.LogFile)
 	}
@@ -122,6 +127,11 @@ func BuildTorrc(o TorOptions) (string, error) {
 				}
 			}
 		}
+	}
+	// Выходы из России и Беларуси не используем: через них не откроются ни заблокированные
+	// в России сайты, ни сервисы, закрытые для России (Spotify).
+	if geo {
+		w("ExcludeExitNodes {ru},{by}")
 	}
 	// Страна выхода: сайты видят IP из выбранной страны. Нужны файлы GeoIP (они идут вместе с Tor).
 	if c := strings.ToLower(strings.TrimSpace(o.ExitCountry)); c != "" {

@@ -93,6 +93,8 @@ public class SettingsActivity extends Activity {
             ObhodVpnService.restartIfRunning(this);
             Toast.makeText(this, R.string.save, Toast.LENGTH_SHORT).show();
         });
+        bindCheck(R.id.keepLocal, "keep_local", Prefs.keepLocal(this));
+        bindCheck(R.id.geoTor, "geo_tor", Prefs.geoTor(this));
         findViewById(R.id.apps).setOnClickListener(v -> pickApps());
         findViewById(R.id.warpReset).setOnClickListener(v -> {
             //noinspection ResultOfMethodCallIgnored
@@ -102,6 +104,15 @@ public class SettingsActivity extends Activity {
         });
         updateAppsInfo();
         route.requestFocus();
+    }
+
+    private void bindCheck(int id, String key, boolean value) {
+        android.widget.CheckBox cb = findViewById(id);
+        cb.setChecked(value);
+        cb.setOnCheckedChangeListener((v, checked) -> {
+            Prefs.get(this).edit().putBoolean(key, checked).apply();
+            ObhodVpnService.restartIfRunning(this);
+        });
     }
 
     private void updateAppsInfo() {

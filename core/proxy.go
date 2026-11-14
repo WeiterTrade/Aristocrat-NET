@@ -25,6 +25,7 @@ type Engine struct {
 	Route     atomic.Value // RouteAuto | RouteDPI | RouteTor
 	Tor       *Tor
 	Warp      *Warp
+	Local     *Local        // российские и казахстанские сайты — напрямую; Spotify в России — через Tor
 	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
 	Timeout   time.Duration // ожидание ответа сервера на каждый метод
 	TorWait   time.Duration // сколько ждать подключения Tor при фолбэке
@@ -217,6 +218,14 @@ func (e *Engine) viaFirst(host string) (Upstream, error) {
 	if isLocalAddr(host) {
 		return nil, nil
 	}
+	// Сервис закрыт для страны пользователя (Spotify в России) — через Tor в любом режиме.
+	if e.Local.NeedsForeignIP(host) && e.torOn() {
+		return e.Tor, nil
+	}
+	// Российские и казахстанские сайты — напрямую, с настоящим IP, в любом режиме.
+	if e.Local.Direct(host) {
+		return nil, nil
+	}
 	switch e.route() {
 	case RouteTor:
 		if !e.torOn() {
@@ -399,8 +408,9 @@ func (e *Engine) connect(host string, port int) (net.Conn, string, error) {
 	if err == nil {
 		return up, "", nil
 	}
-	// Напрямую не подключиться (блокировка по IP или подмена DNS) — пробуем запасные пути.
-	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) {
+	// Напрямую не подключиться (блокировка по IP или подмена DNS) — пробуем запасные пути
+	// (кроме местных сайтов: им нужен настоящий IP).
+	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) && !e.Local.Direct(host) {
 		e.logf("%s: напрямую недоступен (%s), пробую %s", host, shortErr(err), upLabel(ups[0].Name()))
 		up, u, herr := e.heavyDial(host, port, ups)
 		if herr == nil {
@@ -670,7 +680,7 @@ func (e *Engine) relay(client net.Conn, br *bufio.Reader, host string, port int,
 	}
 
 	// Обход DPI не помог — последняя попытка через WARP/Tor.
-	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) {
+	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) && !e.Local.Direct(host) {
 		e.logf("%s: обход DPI не помог (%s), пробую %s", host, shortErr(lastErr), upLabel(ups[0].Name()))
 		var errs []string
 		for _, u := range ups {
