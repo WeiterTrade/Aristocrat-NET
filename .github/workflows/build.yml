@@ -125,11 +125,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
           cache: false
       - name: Зависимости Go (go.sum)
         working-directory: core
-        run: go mod tidy
+        # gVisor (сетевой стек для WARP): в go.mod — версия для Go 1.20 (Windows 7),
+        # для новых Go берём свежую.
+        run: |
+          go get gvisor.dev/gvisor@v0.0.0-20250503011706-39ed1f5ac29c
+          go mod tidy
       - name: Библиотеки окна (GTK3, WebKitGTK 4.1)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
       - name: Сборка obhod (linux/amd64, нативное окно + трей)
@@ -174,7 +178,11 @@ jobs:
           cache: false
       - name: Зависимости Go (go.sum)
         working-directory: core
-        run: go mod tidy
+        # gVisor (сетевой стек для WARP): в go.mod — версия для Go 1.20 (Windows 7),
+        # для новых Go берём свежую.
+        run: |
+          go get gvisor.dev/gvisor@v0.0.0-20250503011706-39ed1f5ac29c
+          go mod tidy
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
