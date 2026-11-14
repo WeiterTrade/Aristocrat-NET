@@ -87,7 +87,31 @@ jobs:
         working-directory: core
         run: |
           # Иконка (ресурс 1) и манифест (стили Windows и DPI — без него окна не создадутся).
-          printf '1 ICON "../assets/obhod.ico"\n1 24 "../packaging/windows/obhod.manifest"\n' > obhod.rc
+          # Сведения о файле: в Диспетчере задач и свойствах файла — «Aristocrat NET».
+          cat > obhod.rc <<'RC'
+          1 ICON "../assets/obhod.ico"
+          1 24 "../packaging/windows/obhod.manifest"
+          1 VERSIONINFO
+          FILEVERSION 1,0,0,0
+          PRODUCTVERSION 1,0,0,0
+          BEGIN
+            BLOCK "StringFileInfo"
+            BEGIN
+              BLOCK "041904B0"
+              BEGIN
+                VALUE "CompanyName", "Aristocrat NET"
+                VALUE "FileDescription", "Aristocrat NET"
+                VALUE "ProductName", "Aristocrat NET"
+                VALUE "OriginalFilename", "Obhod.exe"
+                VALUE "LegalCopyright", "MIT"
+              END
+            END
+            BLOCK "VarFileInfo"
+            BEGIN
+              VALUE "Translation", 0x419, 1200
+            END
+          END
+          RC
           i686-w64-mingw32-windres -O coff -i obhod.rc -o rsrc_windows_386.syso
       - name: Сборка Obhod.exe (x86, работает на Windows 7–11 x86/x64)
         working-directory: core
@@ -107,13 +131,13 @@ jobs:
           cp assets/obhod.ico build/win/
           sed 's/$/\r/' README.md > build/win/README.txt
           makensis -V3 -DVERSION="$V" -DVIVERSION="$WV" -DSRC=../../build/win packaging/windows/obhod.nsi
-          mkdir -p dist && mv packaging/windows/Obhod-Setup-*.exe dist/
+          mkdir -p dist && mv packaging/windows/AristocratNET-Setup-*.exe dist/
       - name: Портативная версия (zip, Windows 7–11)
         run: |
-          mkdir -p build/portable/Obhod
-          cp build/win/Obhod.exe build/win/README.txt build/portable/Obhod/
-          cp -r build/win/tor-legacy build/portable/Obhod/tor
-          (cd build/portable && zip -qr "../../dist/Obhod-Portable-$V-windows.zip" Obhod)
+          mkdir -p build/portable/AristocratNET
+          cp build/win/Obhod.exe build/win/README.txt build/portable/AristocratNET/
+          cp -r build/win/tor-legacy build/portable/AristocratNET/tor
+          (cd build/portable && zip -qr "../../dist/AristocratNET-Portable-$V-windows.zip" AristocratNET)
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -226,7 +250,7 @@ jobs:
           mkdir -p dist
           for f in android/app/build/outputs/apk/release/*.apk; do
             abi=$(basename "$f" .apk | sed -E 's/^app-//; s/-release(-unsigned)?$//')
-            cp "$f" "dist/Obhod-$V-android-$abi.apk"
+            cp "$f" "dist/AristocratNET-$V-android-$abi.apk"
           done
           ls -la dist
       - uses: actions/upload-artifact@v4
