@@ -7,6 +7,7 @@ require (
 	github.com/lxn/walk v0.0.0-20210112085537-c389da54e794
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
 	golang.org/x/sys v0.15.0
+	golang.zx2c4.com/wireguard v0.0.0-20231010133717-ec8f6f82c20c
 )
 
 require (

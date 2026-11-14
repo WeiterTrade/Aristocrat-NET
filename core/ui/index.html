@@ -114,6 +114,8 @@
     <div class="opt col"><div class="l">Маршрут</div><select id="route"></select></div>
     <div class="opt"><div class="l">Метод обхода DPI<br><span class="hint">«Авто» подбирает метод для каждого сайта</span></div>
       <select id="mode"></select></div>
+    <div class="opt" id="heavyBox"><div class="l">Если сайт заблокирован по IP<br><span class="hint">WARP — бесплатный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш</span></div>
+      <select id="heavy"></select></div>
     <div id="torBox">
       <div class="opt"><div class="l">Мосты Tor<br><span class="hint">Как подключаться к Tor (в РФ/РК без мостов он заблокирован)</span></div>
         <select id="bridges"></select></div>
@@ -121,8 +123,8 @@
         <textarea id="custom" rows="4" spellcheck="false" placeholder="Строки мостов obfs4 или webtunnel, по одной в строке. Получить: Telegram-бот @GetBridgesBot"></textarea>
         <button class="btn ghost" id="saveCustom" style="margin-top:6px">Сохранить мосты</button>
       </div>
-      <div class="hint" id="torline" style="margin-top:10px"></div>
     </div>
+    <div class="hint" id="torline" style="margin-top:10px;white-space:pre-line"></div>
   </div>
 
   <div class="card">
@@ -164,8 +166,8 @@
     <div style="text-align:center"><img src="/logo.png" alt="" style="width:120px;height:120px"></div>
     <p style="text-align:center"><b style="font-size:18px">Обход</b><br><span id="aboutVer" class="hint"></span></p>
     <p>Шифрует DNS и обходит блокировки провайдера прямо на вашем устройстве — без VPN-подписок и своих серверов.</p>
-    <p>Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через сеть Tor.</p>
-    <p class="hint">Используются: Tor, lyrebird (Tor Project), hev-socks5-tunnel. Лицензия MIT.</p>
+    <p>Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor.</p>
+    <p class="hint">Используются: wireguard-go, gVisor, Tor, lyrebird, hev-socks5-tunnel. Лицензия MIT.</p>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="aboutClose">Закрыть</button></div>
   </div>
 </div>
@@ -189,12 +191,10 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '
 function fill(id, items) { const el = $(id); if (!el.options.length) items.forEach(x => el.add(new Option(x.name, x.id))); }
 
 function torText(s) {
-  const t = s.tor, st = s.settings;
-  if (!s.on || st.route === 'dpi') return '';
-  if (t.status === 'ready') return 'Tor подключён';
-  if (t.status === 'starting') return 'Tor подключается… ' + t.progress + '%';
-  if (t.error) return t.error;
-  return '';
+  if (!s.on) return '';
+  let lines = (s.up_lines || []).slice();
+  if (s.warp && s.warp.endpoint) lines = lines.map(l => l === 'WARP подключён' ? l + ' (узел ' + s.warp.endpoint + ')' : l);
+  return lines.concat(s.up_warns || []).join('\n');
 }
 
 function render(s) {
@@ -205,18 +205,19 @@ function render(s) {
   p.textContent = busy ? '…' : s.on ? 'Выключить' : 'Включить';
   $('state').textContent = s.on ? 'Шифрование включено' : 'Выключено';
   $('state').className = 'state' + (s.on ? ' on' : '');
-  const route = { auto: 'Обход блокировок + Tor при необходимости', dpi: 'Обход блокировок', tor: 'Весь трафик через Tor' }[st.route];
-  let sub = s.on ? route : 'Трафик идёт как обычно';
-  if (s.on && s.tor.status === 'starting' && st.route !== 'dpi') sub += '<div class="bar"><i style="width:' + s.tor.progress + '%"></i></div>';
+  let sub = s.on ? esc(s.summary) : 'Трафик идёт как обычно';
+  if (s.on && (s.up_lines || []).length) sub += '<br>' + esc(s.up_lines.join(' · '));
+  if (s.on && s.tor.status === 'starting' && (s.up_lines || []).some(l => l.startsWith('Tor'))) sub += '<div class="bar"><i style="width:' + s.tor.progress + '%"></i></div>';
   $('sub').innerHTML = sub;
-  const errs = [s.proxy_err, s.on && st.route !== 'dpi' && s.tor.status === 'error' ? s.tor.error : ''].filter(Boolean);
+  const errs = [s.proxy_err].concat(s.on ? (s.up_warns || []) : []).filter(Boolean);
   $('err').textContent = errs.join('\n');
   if (lastOn !== s.on) { lastOn = s.on; loadIP(); }
 
   // настройки
-  fill('route', s.routes); fill('bridges', s.bridges); fill('mode', [{ id: 'auto', name: 'Авто' }].concat(s.strategies));
-  $('route').value = st.route; $('bridges').value = st.bridges; $('mode').value = st.mode;
-  $('torBox').classList.toggle('hidden', st.route === 'dpi');
+  fill('route', s.routes); fill('heavy', s.heavies); fill('bridges', s.bridges); fill('mode', [{ id: 'auto', name: 'Авто' }].concat(s.strategies));
+  $('route').value = st.route; $('heavy').value = st.heavy; $('bridges').value = st.bridges; $('mode').value = st.mode;
+  $('heavyBox').classList.toggle('hidden', st.route !== 'auto');
+  $('torBox').classList.toggle('hidden', !(st.route === 'tor' || (st.route === 'auto' && st.heavy !== 'warp')));
   $('customBox').classList.toggle('hidden', st.bridges !== 'custom');
   if (document.activeElement !== $('custom')) $('custom').value = st.custom_bridges || '';
   $('torline').textContent = torText(s);
@@ -228,8 +229,8 @@ function render(s) {
 
   let h = '';
   (s.blocked || []).forEach(b => h += `<div class="it"><span class="h" title="${esc(b.reason)}">${esc(b.host)}<br><span class="info">${esc(b.reason)}</span></span><span class="tag bad">не открылся</span><button class="x" data-h="${esc(b.host)}">✕</button></div>`);
-  (s.learned || []).forEach(l => h += `<div class="it"><span class="h">${esc(l.host)}</span><span class="tag${l.strategy === 'tor' ? ' tor' : ''}">${esc(l.name)}</span><button class="x" data-h="${esc(l.host)}">✕</button></div>`);
-  $('sites').innerHTML = h || '<div class="empty">Здесь появятся сайты, для которых понадобился особый метод или Tor.</div>';
+  (s.learned || []).forEach(l => h += `<div class="it"><span class="h">${esc(l.host)}</span><span class="tag${l.strategy === 'tor' || l.strategy === 'warp' ? ' tor' : ''}">${esc(l.name)}</span><button class="x" data-h="${esc(l.host)}">✕</button></div>`);
+  $('sites').innerHTML = h || '<div class="empty">Здесь появятся сайты, для которых понадобился особый метод, WARP или Tor.</div>';
   $('sites').querySelectorAll('.x').forEach(b => b.onclick = () => api('forget', { host: b.dataset.h }).then(render));
 }
 
@@ -272,6 +273,7 @@ $('about').onclick = e => { if (e.target.id === 'about') $('about').classList.ad
 document.onkeydown = e => { if (e.key === 'Escape') { $('about').classList.add('hidden'); if (!$('settings').classList.contains('hidden')) $('back').onclick(); } };
 
 $('route').onchange = e => save({ route: e.target.value });
+$('heavy').onchange = e => save({ heavy: e.target.value });
 $('mode').onchange = e => save({ mode: e.target.value });
 $('bridges').onchange = e => save({ bridges: e.target.value });
 $('saveCustom').onclick = () => save({ custom_bridges: $('custom').value });
@@ -285,16 +287,17 @@ async function runTest() {
   const host = $('host').value.trim(); if (!host) return;
   const btn = $('test'), out = $('testOut');
   btn.disabled = true; btn.textContent = 'Проверяю…';
-  out.innerHTML = '<div class="verdict">Пробую все методы и Tor, до минуты…</div>';
+  out.innerHTML = '<div class="verdict">Пробую все методы, WARP и Tor, до минуты…</div>';
   try {
     const res = await api('test', { host });
-    const plain = res.find(r => r.strategy === 'none'), tor = res.find(r => r.strategy === 'tor');
-    const dpiOk = res.filter(r => r.ok && r.strategy !== 'tor');
+    const plain = res.find(r => r.strategy === 'none'), tor = res.find(r => r.strategy === 'tor'), warp = res.find(r => r.strategy === 'warp');
+    const dpiOk = res.filter(r => r.ok && r.strategy !== 'tor' && r.strategy !== 'warp');
     let v;
     if (plain && plain.ok) v = '✓ Сайт открывается и без обхода.';
     else if (dpiOk.length) v = '✓ Блокировка по DPI — обходится. Лучший метод: <b>' + esc(dpiOk.sort((a, b) => a.ms - b.ms)[0].name) + '</b>.';
+    else if (warp && warp.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через WARP</b> — в режиме «Авто» это произойдёт само.';
     else if (tor && tor.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через Tor</b> — в режиме «Авто» это произойдёт само.';
-    else v = '✗ Не открылся ни одним способом. Если Tor не подключён — проверьте мосты в настройках выше.';
+    else v = '✗ Не открылся ни одним способом. Проверьте, подключены ли WARP и Tor (выше).';
     out.innerHTML = '<div class="verdict">' + v + '</div><table>' + res.map(r =>
       `<tr><td>${esc(r.name)}<div class="info">${esc(r.info)}</div></td><td class="r ${r.ok ? 'yes' : 'no'}">${r.ok ? '✓ ' + r.ms + ' мс' : '✗'}</td></tr>`).join('') + '</table>';
   } catch (e) { out.innerHTML = '<div class="verdict no">' + esc(e.message) + '</div>'; }

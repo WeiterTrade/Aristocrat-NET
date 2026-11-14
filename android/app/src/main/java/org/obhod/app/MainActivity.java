@@ -131,10 +131,24 @@ public class MainActivity extends Activity {
         }
         if (on || starting) {
             String route = Prefs.route(this);
-            String mode = "dpi".equals(route) ? "Обход блокировок"
-                    : "tor".equals(route) ? "Весь трафик через Tor" : "Обход блокировок + Tor при необходимости";
-            String t = ObhodVpnService.torState;
-            torStatus.setText(t.isEmpty() || "dpi".equals(route) ? mode : mode + "\n" + t);
+            String heavy = Prefs.heavy(this);
+            String mode;
+            switch (route) {
+                case "dpi": mode = "Обход блокировок"; break;
+                case "tor": mode = "Весь трафик через Tor"; break;
+                case "warp": mode = "Весь трафик через WARP (другой IP)"; break;
+                default:
+                    mode = "warp".equals(heavy) ? "Обход блокировок + WARP при необходимости"
+                            : "tor".equals(heavy) ? "Обход блокировок + Tor при необходимости"
+                            : "Обход блокировок + WARP/Tor при необходимости";
+            }
+            StringBuilder sb = new StringBuilder(mode);
+            boolean warp = "warp".equals(route) || ("auto".equals(route) && !"tor".equals(heavy));
+            if (warp && !ObhodVpnService.warpState.isEmpty()) sb.append('\n').append(ObhodVpnService.warpState);
+            if (Prefs.needTor(this) && !ObhodVpnService.torState.isEmpty()) {
+                sb.append('\n').append(ObhodVpnService.torState);
+            }
+            torStatus.setText(sb.toString());
         } else {
             torStatus.setText(R.string.sub_off);
         }

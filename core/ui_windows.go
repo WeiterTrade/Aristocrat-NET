@@ -812,8 +812,7 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 
 	on := u.a.eng.Running()
 	st := u.a.settings()
-	ts, tp, te := u.a.tor.Status()
-	stalled := u.a.tor.Stalled()
+	upLines, upWarns := u.a.upstreamLines()
 	u.mu.Lock()
 	busy, errText, ip, cc := u.busy, u.errText, u.ip, u.cc
 	u.mu.Unlock()
@@ -845,7 +844,7 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	padX, pillH := int(18*s), int(40*s)
 	pillW := padX*2 + fw + gap + tw
 	stateY := u.rBtn.Y + u.rBtn.Height + int(20*s)
-	pillY := stateY + int(84*s)
+	pillY := stateY + int(96*s)
 	u.rPill = walk.Rectangle{X: (b.Width - pillW) / 2, Y: pillY, Width: pillW, Height: pillH}
 
 	// Фон и фигуры — одной сглаженной картинкой (пересчитывается только при изменениях).
@@ -908,18 +907,13 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 		walk.Rectangle{X: 0, Y: stateY, Width: b.Width, Height: int(28 * s)}, dtCenter|dtSingle)
 	sub := "Трафик идёт как обычно"
 	if on {
-		sub = map[string]string{RouteAuto: "Обход блокировок, при необходимости — Tor", RouteDPI: "Обход блокировок", RouteTor: "Весь трафик через Tor"}[st.Route]
-		if st.Route != RouteDPI {
-			switch ts {
-			case "starting":
-				sub += fmt.Sprintf("\nTor подключается… %d%%", tp)
-			case "ready":
-				sub += "\nTor подключён"
-			}
+		sub = routeSummary(st)
+		if len(upLines) > 0 {
+			sub += "\n" + strings.Join(upLines, " · ")
 		}
 	}
 	u.txt.draw(hdc, sub, u.txt.font("Segoe UI", int(13*s), false), cOnSkySub,
-		walk.Rectangle{X: int(20 * s), Y: stateY + int(32*s), Width: b.Width - int(40*s), Height: int(44 * s)}, dtCenter|dtWord)
+		walk.Rectangle{X: int(20 * s), Y: stateY + int(32*s), Width: b.Width - int(40*s), Height: int(58 * s)}, dtCenter|dtWord)
 
 	// Плашка: флаг и IP — по центру под кнопкой
 	x := u.rPill.X + padX
@@ -937,12 +931,8 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	if u.a.proxyErr != "" {
 		msgs = append(msgs, u.a.proxyErr)
 	}
-	if on && st.Route != RouteDPI {
-		if ts == "error" && te != "" {
-			msgs = append(msgs, te)
-		} else if stalled {
-			msgs = append(msgs, StallHint)
-		}
+	if on {
+		msgs = append(msgs, upWarns...)
 	}
 	if len(msgs) > 0 {
 		y := pillY + pillH + int(14*s)
@@ -967,8 +957,9 @@ func (u *nativeUI) paintAbout(c *walk.Canvas, hdc win.HDC, b walk.Rectangle, s f
 	y += int(32 * s)
 	text := "Шифрует DNS и обходит блокировки провайдера прямо на компьютере — без VPN-подписок и своих серверов.\n\n" +
 		"Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) " +
-		"не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через сеть Tor.\n\n" +
-		"Используются: Tor и lyrebird (Tor Project). Лицензия MIT."
+		"не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через " +
+		"бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor.\n\n" +
+		"Используются: wireguard-go, gVisor, Tor и lyrebird. Лицензия MIT."
 	u.txt.draw(hdc, text, u.txt.font("Segoe UI", int(13*s), false), cOnSky,
 		walk.Rectangle{X: int(30 * s), Y: y, Width: b.Width - int(60*s), Height: b.Height - y - int(16*s)}, dtCenter|dtWord)
 }
@@ -1025,8 +1016,9 @@ func (u *nativeUI) ticker(done <-chan struct{}) {
 			lastOn = on
 			go u.loadIP()
 		}
-		ts, tp, te := u.a.tor.Status()
-		sig := fmt.Sprintf("%v|%s|%d|%s|%s|%s|%v", on, ts, tp, te, u.a.proxyErr, u.a.settings().Route, u.a.tor.Stalled())
+		ul, uw := u.a.upstreamLines()
+		st := u.a.settings()
+		sig := fmt.Sprintf("%v|%v|%v|%s|%s|%s", on, ul, uw, u.a.proxyErr, st.Route, st.Heavy)
 		u.mu.Lock()
 		changed := sig != u.lastSig
 		u.lastSig = sig
@@ -1156,8 +1148,12 @@ func indexOf(list []string, v string) int {
 
 func (u *nativeUI) settingsWidgets() []dcl.Widget {
 	st := u.a.settings()
-	routeIDs := []string{RouteAuto, RouteDPI, RouteTor}
-	routeNames := []string{RouteNames[RouteAuto], RouteNames[RouteDPI], RouteNames[RouteTor]}
+	routeIDs := []string{RouteAuto, RouteDPI, RouteWarp, RouteTor}
+	routeNames := []string{RouteNames[RouteAuto], RouteNames[RouteDPI], RouteNames[RouteWarp], RouteNames[RouteTor]}
+	heavyNames := make([]string, len(heavyOrder))
+	for i, h := range heavyOrder {
+		heavyNames[i] = HeavyNames[h]
+	}
 	stratIDs := append([]string{"auto"}, AutoOrder...)
 	stratNames := []string{"Авто"}
 	for _, s := range AutoOrder {
@@ -1172,6 +1168,7 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 
 	var (
 		cbRoute, cbStrat, cbBridges, cbDoH *walk.ComboBox
+		cbHeavy                            *walk.ComboBox
 		teCustom, teTest, teSites, teLog   *walk.TextEdit
 		btnTest                            *walk.PushButton
 		leHost                             *walk.LineEdit
@@ -1187,13 +1184,16 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 		}
 		s := u.a.settings()
 		s.Route = routeIDs[cbRoute.CurrentIndex()]
+		s.Heavy = heavyOrder[cbHeavy.CurrentIndex()]
 		s.Mode = stratIDs[cbStrat.CurrentIndex()]
 		s.Bridges = bridgeOrder[cbBridges.CurrentIndex()]
 		s.DoH = dohIDs[cbDoH.CurrentIndex()]
 		s.SysProxy = chkSys.Checked()
 		s.AutoStart = chkAuto.Checked()
 		s.Port = int(nePort.Value())
-		cbBridges.SetEnabled(s.Route != RouteDPI)
+		_, needTor := s.needs()
+		cbBridges.SetEnabled(needTor)
+		cbHeavy.SetEnabled(s.Route == RouteAuto)
 		go func() {
 			if err := u.a.applySettings(s); err != nil {
 				u.mw.Synchronize(func() { walk.MsgBox(u.mw, "Настройки", err.Error(), walk.MsgBoxIconWarning) })
@@ -1210,7 +1210,7 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 			lines = append(lines, "✓ "+h+" — "+StratNames[s])
 		}
 		if len(lines) == 0 {
-			return "Здесь появятся сайты, для которых понадобился особый метод или Tor."
+			return "Здесь появятся сайты, для которых понадобился особый метод, WARP или Tor."
 		}
 		return strings.Join(lines, "\r\n")
 	}
@@ -1221,7 +1221,7 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 			return
 		}
 		btnTest.SetEnabled(false)
-		_ = teTest.SetText("Пробую все методы и Tor, до минуты…")
+		_ = teTest.SetText("Пробую все методы, WARP и Tor, до минуты…")
 		go func() {
 			res, err := u.a.eng.TestHost(host, false)
 			var out string
@@ -1263,18 +1263,10 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 		if sx := sites(); teSites.Text() != sx {
 			_ = teSites.SetText(sx)
 		}
-		ts, tp, te := u.a.tor.Status()
-		t := ""
-		switch ts {
-		case "ready":
-			t = "Tor подключён"
-		case "starting":
-			t = fmt.Sprintf("Tor подключается… %d%%", tp)
-			if u.a.tor.Stalled() {
-				t += "\n" + StallHint
-			}
-		case "error":
-			t = te
+		ul, uw := u.a.upstreamLines()
+		t := strings.Join(append(ul, uw...), "\n")
+		if ep := u.a.warp.Endpoint(); ep != "" && strings.Contains(t, "WARP подключён") {
+			t = strings.Replace(t, "WARP подключён", "WARP подключён (узел "+ep+")", 1)
 		}
 		_ = lblTor.SetText(t)
 	}
@@ -1296,9 +1288,13 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 				dcl.ComboBox{AssignTo: &cbRoute, Model: routeNames, CurrentIndex: indexOf(routeIDs, st.Route), OnCurrentIndexChanged: apply},
 				dcl.Label{Text: "Метод обхода DPI:"},
 				dcl.ComboBox{AssignTo: &cbStrat, Model: stratNames, CurrentIndex: indexOf(stratIDs, st.Mode), OnCurrentIndexChanged: apply},
+				dcl.Label{Text: "Если сайт заблокирован по IP:"},
+				dcl.ComboBox{AssignTo: &cbHeavy, Model: heavyNames, CurrentIndex: indexOf(heavyOrder, st.Heavy), OnCurrentIndexChanged: apply,
+					Enabled: st.Route == RouteAuto},
+				dcl.Label{ColumnSpan: 2, Text: "WARP — бесплатный зашифрованный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш.", TextColor: cMuted.walk()},
 				dcl.Label{Text: "Мосты Tor:"},
 				dcl.ComboBox{AssignTo: &cbBridges, Model: bridgeNames, CurrentIndex: indexOf(bridgeOrder, st.Bridges), OnCurrentIndexChanged: apply,
-					Enabled: st.Route != RouteDPI},
+					Enabled: func() bool { _, t := st.needs(); return t }()},
 				dcl.Label{ColumnSpan: 2, Text: "Свои мосты (WebTunnel / obfs4 из Telegram-бота @GetBridgesBot), по одному в строке.\nИспользуются в режимах «Свои мосты» и «Автовыбор»:", TextColor: cMuted.walk()},
 				dcl.TextEdit{AssignTo: &teCustom, ColumnSpan: 2, MinSize: dcl.Size{Height: 64}, VScroll: true,
 					Text: strings.ReplaceAll(st.CustomBridges, "\n", "\r\n"), Font: dcl.Font{Family: "Consolas", PointSize: 8}},

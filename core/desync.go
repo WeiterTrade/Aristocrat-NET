@@ -17,7 +17,8 @@ const (
 	StratTLSRecSplit  = "tlsrec+split" // оба способа сразу
 	StratDisorder     = "disorder"     // первый сегмент уходит с TTL=1 и доходит только повторной отправкой
 	StratTLSRecDisord = "tlsrec+disorder"
-	StratTor          = "tor" // не метод обхода, а маршрут: через Tor
+	StratTor          = "tor"  // не метод обхода, а маршрут: через Tor
+	StratWarp         = "warp" // маршрут через Cloudflare WARP
 )
 
 // Порядок перебора в авторежиме: от самых дешёвых к самым «тяжёлым».
@@ -31,6 +32,7 @@ var StratNames = map[string]string{
 	StratDisorder:     "Disorder (TTL)",
 	StratTLSRecDisord: "TLS-запись + disorder",
 	StratTor:          "Через Tor",
+	StratWarp:         "Через WARP",
 }
 
 func validStrategy(s string) bool { _, ok := StratNames[s]; return ok }

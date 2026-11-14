@@ -52,6 +52,7 @@ public class ObhodVpnService extends VpnService {
     static volatile String state = "off"; // off | starting | on | error
     static volatile String error = "";
     static volatile String torState = "";
+    static volatile String warpState = "";
     private static final ArrayDeque<String> LOG = new ArrayDeque<>();
 
     private ParcelFileDescriptor tun;
@@ -100,9 +101,10 @@ public class ObhodVpnService extends VpnService {
     private final ServiceConnection torConn = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) { log("TorService запущен"); }
         @Override public void onServiceDisconnected(ComponentName name) {
-            // Процесс :tor упал (обычно — не запустился транспорт мостов). Приложение и обход DPI продолжают работать.
-            torState = "Tor аварийно завершился — выберите другой тип мостов в настройках";
+            // Процесс :tor упал. Приложение, обход DPI и WARP продолжают работать.
+            torState = "Tor аварийно завершился — подробности в журнале (Настройки)";
             log(torState);
+            dumpTorCrash();
         }
     };
 
@@ -167,6 +169,7 @@ public class ObhodVpnService extends VpnService {
         state = "starting";
         error = "";
         torState = "";
+        warpState = "";
         try {
             String libDir = getApplicationInfo().nativeLibraryDir;
             File coreBin = new File(libDir, "libobhod.so");
@@ -177,12 +180,16 @@ public class ObhodVpnService extends VpnService {
             killStaleCore(data);
 
             String route = Prefs.route(this);
-            boolean useTor = !"dpi".equals(route);
+            boolean useTor = Prefs.needTor(this);
+            File torLog = new File(data, "tor.log");
 
             // 1. Tor: torrc собирает ядро (те же правила мостов, что и на ПК), запускает TorService.
+            //    Журнал tor пишет в файл — ядро читает его (прогресс подключения и причины ошибок).
             if (useTor) {
                 try {
-                    writeTorrc(coreBin, lyrebird, data);
+                    //noinspection ResultOfMethodCallIgnored
+                    torLog.delete();
+                    writeTorrc(coreBin, lyrebird, data, torLog);
                     torBound = bindService(new Intent(this, TorService.class), torConn, BIND_AUTO_CREATE);
                     torState = "Tor подключается…";
                 } catch (Exception e) {
@@ -201,10 +208,14 @@ public class ObhodVpnService extends VpnService {
             cmd.add("-port");
             cmd.add(String.valueOf(CORE_PORT));
             cmd.add("-route");
-            cmd.add(useTor ? route : "dpi");
+            cmd.add("tor".equals(route) && !useTor ? "dpi" : route);
+            cmd.add("-heavy");
+            cmd.add(Prefs.heavy(this));
             if (useTor) {
                 cmd.add("-tor-socks");
                 cmd.add(TOR_SOCKS);
+                cmd.add("-tor-log");
+                cmd.add(torLog.getAbsolutePath());
             }
             ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true).directory(data);
             Map<String, String> env = pb.environment();
@@ -228,7 +239,16 @@ public class ObhodVpnService extends VpnService {
             } catch (Exception e) {
                 log("IPv6 недоступен: " + e.getMessage());
             }
-            b.addDisallowedApplication(getPackageName()); // ядро и Tor идут мимо VPN
+            b.addDisallowedApplication(getPackageName()); // ядро, Tor и WARP идут мимо VPN
+            // Приложения, выбранные пользователем (банки, сервисы с привязкой к стране), — мимо «Обхода».
+            for (String pkg : Prefs.excluded(this)) {
+                if (pkg.equals(getPackageName())) continue;
+                try {
+                    b.addDisallowedApplication(pkg);
+                } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
+                    // не установлено
+                }
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) b.setMetered(false);
             b.setConfigureIntent(PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class),
                     PendingIntent.FLAG_IMMUTABLE));
@@ -267,7 +287,7 @@ public class ObhodVpnService extends VpnService {
         }
     }
 
-    private void writeTorrc(File coreBin, File lyrebird, File data) throws Exception {
+    private void writeTorrc(File coreBin, File lyrebird, File data, File torLog) throws Exception {
         File pt = new File(data, "pt_config.json");
         copyAsset("pt_config.json", pt);
         File custom = new File(data, "custom_bridges.txt");
@@ -283,7 +303,8 @@ public class ObhodVpnService extends VpnService {
                 "-bridges", Prefs.bridges(this),
                 "-custom-bridges", custom.getAbsolutePath(),
                 "-pt-config", pt.getAbsolutePath(),
-                "-lyrebird", lyrebird.getAbsolutePath())
+                "-lyrebird", lyrebird.getAbsolutePath(),
+                "-tor-log", torLog.getAbsolutePath())
                 .redirectErrorStream(true).start();
         String out = readAll(p.getInputStream());
         if (p.waitFor() != 0) {
@@ -326,8 +347,16 @@ public class ObhodVpnService extends VpnService {
                 String l;
                 while ((l = r.readLine()) != null) {
                     log(l);
-                    if (l.contains("Tor подключён")) torState = "Tor подключён";
-                    else if (l.contains("Tor завершился")) torState = l.replaceFirst("^\\S+ ", "");
+                    String m = l.replaceFirst("^\\d\\d:\\d\\d:\\d\\d ", "");
+                    if (m.startsWith("Tor подключён")) torState = "Tor подключён";
+                    else if (m.startsWith("Tor: подключение ")) torState = "Tor подключается… " + m.substring(17);
+                    else if (m.startsWith("Tor перестал отвечать")) torState = "Tor не отвечает";
+                    else if (m.startsWith("Tor завершился")) torState = m;
+                    else if (m.startsWith("WARP подключён")) warpState = "WARP подключён";
+                    else if (m.startsWith("WARP: регистрирую")) warpState = "WARP: регистрация…";
+                    else if (m.startsWith("WARP: связь")) warpState = "WARP переподключается…";
+                    else if (m.startsWith("WARP: не удалось") || m.startsWith("WARP: нет связи")
+                            || m.contains("блокирует WARP")) warpState = m;
                 }
             } catch (IOException ignored) {
             }
@@ -358,6 +387,7 @@ public class ObhodVpnService extends VpnService {
         cleanup();
         state = "off";
         torState = "";
+        warpState = "";
         log("VPN выключен");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
@@ -390,5 +420,33 @@ public class ObhodVpnService extends VpnService {
             torBound = false;
             stopService(new Intent(this, TorService.class));
         }
+    }
+
+    /**
+     * Tor упал: достаём из системного журнала (своего приложения — разрешение не нужно)
+     * последние сообщения tor и сведения о падении, чтобы было видно причину.
+     */
+    private static void dumpTorCrash() {
+        new Thread(() -> {
+            try {
+                Process p = Runtime.getRuntime().exec(new String[]{"logcat", "-d", "-t", "600", "-v", "brief"});
+                String all = readAll(p.getInputStream());
+                List<String> hits = new ArrayList<>();
+                for (String l : all.split("\n")) {
+                    String low = l.toLowerCase(java.util.Locale.ROOT);
+                    if (low.contains("tor") || low.contains("lyrebird") || low.contains("fatal signal")
+                            || low.contains("androidruntime") || low.contains("abort")) {
+                        hits.add(l.trim());
+                    }
+                }
+                int from = Math.max(0, hits.size() - 25);
+                if (hits.isEmpty()) {
+                    log("Системный журнал: сообщений Tor нет");
+                }
+                for (int i = from; i < hits.size(); i++) log("[logcat] " + hits.get(i));
+            } catch (Exception e) {
+                log("Не удалось прочитать системный журнал: " + e.getMessage());
+            }
+        }, "obhod-tor-crash").start();
     }
 }

@@ -20,12 +20,14 @@ import (
 
 // Engine — локальный прокси с обходом DPI.
 type Engine struct {
-	Resolver *Resolver
-	Mode     atomic.Value // "auto" или конкретный метод обхода DPI
-	Route    atomic.Value // RouteAuto | RouteDPI | RouteTor
-	Tor      *Tor
-	Timeout  time.Duration // ожидание ответа сервера на каждый метод
-	TorWait  time.Duration // сколько ждать подключения Tor при фолбэке
+	Resolver  *Resolver
+	Mode      atomic.Value // "auto" или конкретный метод обхода DPI
+	Route     atomic.Value // RouteAuto | RouteDPI | RouteTor
+	Tor       *Tor
+	Warp      *Warp
+	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
+	Timeout   time.Duration // ожидание ответа сервера на каждый метод
+	TorWait   time.Duration // сколько ждать подключения Tor при фолбэке
 
 	DialTimeout time.Duration
 
@@ -137,15 +139,26 @@ func (e *Engine) Stop() {
 
 // Маршрутизация.
 const (
-	RouteAuto = "auto" // обход DPI, при неудаче — Tor
+	RouteAuto = "auto" // обход DPI, при неудаче — WARP/Tor
 	RouteDPI  = "dpi"  // только обход DPI
 	RouteTor  = "tor"  // всё через Tor
+	RouteWarp = "warp" // всё через Cloudflare WARP (другой IP)
 )
 
 var RouteNames = map[string]string{
-	RouteAuto: "Авто: обход DPI, при блокировке — Tor",
+	RouteAuto: "Авто: обход DPI, при блокировке — WARP или Tor",
 	RouteDPI:  "Только обход DPI",
+	RouteWarp: "Всё через WARP (смена IP)",
 	RouteTor:  "Всё через Tor",
+}
+
+// Upstream — запасной путь для тяжёлых случаев (блокировка по IP, подмена DNS):
+// Cloudflare WARP или Tor.
+type Upstream interface {
+	Name() string // StratWarp | StratTor
+	Enabled() bool
+	WaitReady(d time.Duration) bool
+	Dial(ctx context.Context, host string, port int) (net.Conn, error)
 }
 
 func (e *Engine) route() string {
@@ -156,32 +169,83 @@ func (e *Engine) route() string {
 	return r
 }
 
-func (e *Engine) torAvailable() bool { return e.Tor != nil && e.Tor.Enabled() }
+func (e *Engine) torOn() bool  { return e.Tor != nil && e.Tor.Enabled() }
+func (e *Engine) warpOn() bool { return e.Warp != nil && e.Warp.Enabled() }
 
-// viaTorFirst — сразу через Tor, не пытаясь напрямую.
-func (e *Engine) viaTorFirst(host string) bool {
+// upstreams — запасные пути по порядку для текущего режима.
+func (e *Engine) upstreams() []Upstream {
+	var out []Upstream
+	switch e.route() {
+	case RouteDPI:
+	case RouteTor:
+		if e.torOn() {
+			out = append(out, e.Tor)
+		}
+	case RouteWarp:
+		if e.warpOn() {
+			out = append(out, e.Warp)
+		}
+	default:
+		if e.warpOn() {
+			out = append(out, e.Warp)
+		}
+		if e.torOn() {
+			out = append(out, e.Tor)
+		}
+	}
+	return out
+}
+
+func (e *Engine) upstreamByName(name string) Upstream {
+	switch {
+	case name == StratTor && e.torOn():
+		return e.Tor
+	case name == StratWarp && e.warpOn():
+		return e.Warp
+	}
+	return nil
+}
+
+// viaFirst — путь, по которому идти сразу, не пытаясь напрямую (nil — напрямую).
+func (e *Engine) viaFirst(host string) (Upstream, error) {
 	if strings.HasSuffix(host, ".onion") {
-		return true
+		if e.torOn() {
+			return e.Tor, nil
+		}
+		return nil, errors.New("сайты .onion открываются только через Tor — включите Tor в настройках")
 	}
 	if isLocalAddr(host) {
-		return false
+		return nil, nil
 	}
 	switch e.route() {
 	case RouteTor:
-		return true
+		if !e.torOn() {
+			return nil, errors.New("Tor не запущен")
+		}
+		return e.Tor, nil
+	case RouteWarp:
+		if !e.warpOn() {
+			return nil, errors.New("WARP не запущен")
+		}
+		return e.Warp, nil
 	case RouteDPI:
-		return false
+		return nil, nil
 	}
 	e.mu.Lock()
 	l := e.learned[host]
 	e.mu.Unlock()
-	return l == StratTor && e.torAvailable()
+	// Сайт уже открывался только через запасной путь — сразу туда, но только если путь работает
+	// прямо сейчас (иначе пробуем напрямую: вдруг блокировку сняли).
+	if u := e.upstreamByName(l); u != nil && u.WaitReady(0) {
+		return u, nil
+	}
+	return nil, nil
 }
 
 var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 var benchmark = &net.IPNet{IP: net.IPv4(198, 18, 0, 0), Mask: net.CIDRMask(15, 32)}
 
-// isLocalAddr — локальные и служебные адреса: в Tor их отправлять бессмысленно.
+// isLocalAddr — локальные и служебные адреса: в Tor/WARP их отправлять бессмысленно.
 func isLocalAddr(host string) bool {
 	if host == "localhost" || strings.HasSuffix(host, ".local") {
 		return true
@@ -194,22 +258,53 @@ func isLocalAddr(host string) bool {
 		ip.IsMulticast() || cgnat.Contains(ip) || benchmark.Contains(ip)
 }
 
-// torFallbackAllowed — можно ли уйти в Tor, если напрямую не вышло.
-func (e *Engine) torFallbackAllowed() bool {
-	return e.route() != RouteDPI && e.torAvailable()
+// upDial подключается через один запасной путь, дождавшись его готовности.
+func (e *Engine) upDial(u Upstream, host string, port int) (net.Conn, error) {
+	wait := e.TorWait
+	if u.Name() == StratWarp {
+		wait = 20 * time.Second
+	}
+	if !u.WaitReady(wait) {
+		switch t := u.(type) {
+		case *Tor:
+			_, p, msg := t.Status()
+			if msg != "" {
+				return nil, errors.New(msg)
+			}
+			return nil, fmt.Errorf("ещё подключается (%d%%)", p)
+		case *Warp:
+			if _, msg := t.Status(); msg != "" {
+				return nil, errors.New(msg)
+			}
+		}
+		return nil, errors.New("ещё подключается")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	return u.Dial(ctx, host, port)
 }
 
-func (e *Engine) torDial(host string, port int) (net.Conn, error) {
-	if e.Tor == nil {
-		return nil, errors.New("Tor не настроен")
+// heavyDial перебирает запасные пути по порядку.
+func (e *Engine) heavyDial(host string, port int, ups []Upstream) (net.Conn, Upstream, error) {
+	var errs []string
+	for _, u := range ups {
+		c, err := e.upDial(u, host, port)
+		if err == nil {
+			return c, u, nil
+		}
+		errs = append(errs, fmt.Sprintf("через %s: %v", upLabel(u.Name()), err))
 	}
-	if !e.Tor.WaitReady(e.TorWait) {
-		_, p, _ := e.Tor.Status()
-		return nil, fmt.Errorf("Tor ещё подключается (%d%%)", p)
+	if len(errs) == 0 {
+		return nil, nil, errors.New("запасной путь не настроен")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	return e.Tor.Dial(ctx, host, port)
+	return nil, nil, errors.New(strings.Join(errs, "; "))
+}
+
+func upLabel(name string) string {
+	if name == StratWarp {
+		return "WARP"
+	}
+	return "Tor"
 }
 
 func (e *Engine) handle(c net.Conn) {
@@ -217,7 +312,7 @@ func (e *Engine) handle(c net.Conn) {
 	e.conns.Add(1)
 	defer e.conns.Add(-1)
 	e.total.Add(1)
-	_ = c.SetDeadline(time.Now().Add(15 * time.Second))
+	_ = c.SetDeadline(time.Now().Add(15 * time.Second)) // только на чтение запроса
 	br := bufio.NewReaderSize(c, 32*1024)
 	b, err := br.Peek(1)
 	if err != nil {
@@ -231,19 +326,21 @@ func (e *Engine) handle(c net.Conn) {
 	if err != nil {
 		return
 	}
+	// Подключение через Tor может занять больше 15 секунд — снимаем ограничение.
+	_ = c.SetDeadline(time.Time{})
 	if req.Method == http.MethodConnect {
 		host, port, err := splitHostPort(req.Host, "443")
 		if err != nil {
 			_, _ = io.WriteString(c, "HTTP/1.1 400 Bad Request\r\n\r\n")
 			return
 		}
-		up, viaTor, err := e.connect(host, port)
+		up, via, err := e.connect(host, port)
 		if err != nil {
 			badGateway(c, host, err)
 			return
 		}
 		_, _ = io.WriteString(c, "HTTP/1.1 200 Connection Established\r\n\r\n")
-		e.relay(c, br, host, port, nil, up, viaTor)
+		e.relay(c, br, host, port, nil, up, via)
 		return
 	}
 	// Обычный HTTP через прокси: переписываем запрос в обычную форму (origin-form).
@@ -259,44 +356,61 @@ func (e *Engine) handle(c net.Conn) {
 	req.Header.Del("Proxy-Authorization")
 	req.Close = true
 	req.RequestURI = ""
-	var buf bytes.Buffer
-	if err := req.Write(&buf); err != nil {
-		return
-	}
-	up, viaTor, err := e.connect(host, port)
+	up, via, err := e.connect(host, port)
 	if err != nil {
 		badGateway(c, host, err)
 		return
 	}
-	e.relay(c, br, host, port, buf.Bytes(), up, viaTor)
+	if req.Body != nil && req.Body != http.NoBody {
+		// Запрос с телом (загрузка файла): отправляем потоком, без проверок ответа.
+		defer up.Close()
+		if err := req.Write(up); err != nil {
+			return
+		}
+		_, _ = io.Copy(c, up)
+		return
+	}
+	var buf bytes.Buffer
+	if err := req.Write(&buf); err != nil {
+		up.Close()
+		return
+	}
+	e.relay(c, br, host, port, buf.Bytes(), up, via)
 }
 
-// connect устанавливает первое соединение: напрямую или через Tor.
-func (e *Engine) connect(host string, port int) (net.Conn, bool, error) {
-	if e.viaTorFirst(host) {
-		up, err := e.torDial(host, port)
+// connect устанавливает первое соединение: напрямую или через запасной путь.
+// via — имя пути (StratTor/StratWarp) или "" для прямого соединения.
+func (e *Engine) connect(host string, port int) (net.Conn, string, error) {
+	u, err := e.viaFirst(host)
+	if err != nil {
+		e.markBlocked(host, err.Error())
+		return nil, "", err
+	}
+	if u != nil {
+		up, err := e.upDial(u, host, port)
 		if err != nil {
+			err = fmt.Errorf("через %s: %v", upLabel(u.Name()), err)
 			e.markBlocked(host, err.Error())
-			return nil, true, err
+			return nil, u.Name(), err
 		}
-		return up, true, nil
+		return up, u.Name(), nil
 	}
 	up, err := e.dial(context.Background(), host, port)
 	if err == nil {
-		return up, false, nil
+		return up, "", nil
 	}
-	// Напрямую не подключиться (блокировка по IP или подмена DNS) — пробуем Tor.
-	if e.torFallbackAllowed() && !isLocalAddr(host) {
-		e.logf("%s: напрямую недоступен (%s), пробую Tor", host, shortErr(err))
-		up, terr := e.torDial(host, port)
-		if terr == nil {
-			e.markOK(host, StratTor, true)
-			return up, true, nil
+	// Напрямую не подключиться (блокировка по IP или подмена DNS) — пробуем запасные пути.
+	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) {
+		e.logf("%s: напрямую недоступен (%s), пробую %s", host, shortErr(err), upLabel(ups[0].Name()))
+		up, u, herr := e.heavyDial(host, port, ups)
+		if herr == nil {
+			e.markOK(host, u.Name(), true)
+			return up, u.Name(), nil
 		}
-		err = fmt.Errorf("%v; через Tor: %v", err, terr)
+		err = fmt.Errorf("%v; %v", err, herr)
 	}
 	e.markBlocked(host, err.Error())
-	return nil, false, err
+	return nil, "", err
 }
 
 func badGateway(c net.Conn, host string, err error) {
@@ -316,6 +430,42 @@ func splitHostPort(hp, defPort string) (string, int, error) {
 	return strings.ToLower(h), port, nil
 }
 
+// readSocksAddr читает адрес SOCKS5 (ATYP + адрес + порт).
+func readSocksAddr(br io.Reader, atyp byte) (string, int, error) {
+	var host string
+	switch atyp {
+	case 1:
+		ip := make([]byte, 4)
+		if _, err := io.ReadFull(br, ip); err != nil {
+			return "", 0, err
+		}
+		host = net.IP(ip).String()
+	case 4:
+		ip := make([]byte, 16)
+		if _, err := io.ReadFull(br, ip); err != nil {
+			return "", 0, err
+		}
+		host = net.IP(ip).String()
+	case 3:
+		l := make([]byte, 1)
+		if _, err := io.ReadFull(br, l); err != nil {
+			return "", 0, err
+		}
+		name := make([]byte, l[0])
+		if _, err := io.ReadFull(br, name); err != nil {
+			return "", 0, err
+		}
+		host = strings.ToLower(string(name))
+	default:
+		return "", 0, errors.New("неизвестный тип адреса")
+	}
+	pb := make([]byte, 2)
+	if _, err := io.ReadFull(br, pb); err != nil {
+		return "", 0, err
+	}
+	return host, int(binary.BigEndian.Uint16(pb)), nil
+}
+
 func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 	hdr := make([]byte, 2)
 	if _, err := io.ReadFull(br, hdr); err != nil {
@@ -326,43 +476,25 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 	}
 	_, _ = c.Write([]byte{5, 0}) // без пароля
 	req := make([]byte, 4)
-	if _, err := io.ReadFull(br, req); err != nil || req[1] != 1 {
-		_, _ = c.Write([]byte{5, 7, 0, 1, 0, 0, 0, 0, 0, 0}) // поддерживается только CONNECT
+	if _, err := io.ReadFull(br, req); err != nil {
 		return
 	}
-	var host string
-	switch req[3] {
-	case 1:
-		ip := make([]byte, 4)
-		if _, err := io.ReadFull(br, ip); err != nil {
-			return
-		}
-		host = net.IP(ip).String()
-	case 4:
-		ip := make([]byte, 16)
-		if _, err := io.ReadFull(br, ip); err != nil {
-			return
-		}
-		host = net.IP(ip).String()
-	case 3:
-		l, err := br.ReadByte()
-		if err != nil {
-			return
-		}
-		name := make([]byte, l)
-		if _, err := io.ReadFull(br, name); err != nil {
-			return
-		}
-		host = strings.ToLower(string(name))
+	host, port, err := readSocksAddr(br, req[3])
+	if err != nil {
+		_, _ = c.Write([]byte{5, 8, 0, 1, 0, 0, 0, 0, 0, 0})
+		return
+	}
+	_ = c.SetDeadline(time.Time{})
+	switch req[1] {
+	case 1: // CONNECT
+	case 3: // UDP ASSOCIATE — голосовые звонки, игры, DNS и т. п.
+		e.socksUDP(c, br)
+		return
 	default:
+		_, _ = c.Write([]byte{5, 7, 0, 1, 0, 0, 0, 0, 0, 0})
 		return
 	}
-	pb := make([]byte, 2)
-	if _, err := io.ReadFull(br, pb); err != nil {
-		return
-	}
-	port := int(binary.BigEndian.Uint16(pb))
-	up, viaTor, err := e.connect(host, port)
+	up, via, err := e.connect(host, port)
 	if err != nil {
 		code := byte(5) // connection refused
 		if errors.Is(err, errConnect) {
@@ -372,7 +504,7 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 		return
 	}
 	_, _ = c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
-	e.relay(c, br, host, port, nil, up, viaTor)
+	e.relay(c, br, host, port, nil, up, via)
 }
 
 // readFirst читает первые данные клиента (для TLS — целиком первую запись ClientHello).
@@ -398,20 +530,40 @@ func readFirst(c net.Conn, br *bufio.Reader) []byte {
 	return buf
 }
 
+// checkable — можно ли по ответу сервера понять, сработал ли обход: TLS ClientHello
+// или короткий HTTP-запрос без тела. Остальное (MTProto Telegram, загрузки файлов,
+// игры, голосовые сервисы) передаётся как есть — сервер может молчать, пока не получит
+// всё сообщение, и «ожидание ответа» ломало бы такие соединения.
+func checkable(first []byte) bool {
+	if len(first) == 0 {
+		return false
+	}
+	if first[0] == 0x16 {
+		return len(first) >= 6 && first[5] == 0x01 // TLS Handshake: ClientHello
+	}
+	for _, m := range []string{"GET ", "HEAD ", "OPTIONS "} {
+		if bytes.HasPrefix(first, []byte(m)) {
+			end := bytes.Index(first, []byte("\r\n\r\n"))
+			return end >= 0 && end+4 == len(first)
+		}
+	}
+	return false
+}
+
 func (e *Engine) strategiesFor(host string) []string {
 	mode, _ := e.Mode.Load().(string)
-	if mode != "auto" && validStrategy(mode) && mode != StratTor {
+	if mode != "auto" && validStrategy(mode) && !isUpstreamStrat(mode) {
 		return []string{mode}
 	}
 	e.mu.Lock()
 	first := e.learned[host]
 	e.mu.Unlock()
-	if first == StratTor {
-		first = "" // Tor выключили — снова пробуем обход DPI
+	if isUpstreamStrat(first) {
+		first = "" // запасной путь сейчас не используется — снова пробуем обход DPI
 	}
 	base := AutoOrder
-	if e.torFallbackAllowed() {
-		// Есть запасной путь через Tor — не тратим время на все методы.
+	if len(e.upstreams()) > 0 {
+		// Есть запасной путь — не тратим время на все методы.
 		base = []string{StratTLSRec, StratTLSRecSplit, StratTLSRecDisord, StratNone}
 	}
 	order := make([]string, 0, len(base)+1)
@@ -425,6 +577,8 @@ func (e *Engine) strategiesFor(host string) []string {
 	}
 	return order
 }
+
+func isUpstreamStrat(s string) bool { return s == StratTor || s == StratWarp }
 
 var errConnect = errors.New("не удаётся установить TCP-соединение — вероятно, блокировка по IP или сайт недоступен")
 
@@ -449,24 +603,22 @@ func (e *Engine) dial(ctx context.Context, host string, port int) (net.Conn, err
 	return nil, errConnect
 }
 
-func (e *Engine) tunnel(client net.Conn, br *bufio.Reader, host string, port int, first []byte) {
-	up, viaTor, err := e.connect(host, port)
-	if err != nil {
-		return
-	}
-	e.relay(client, br, host, port, first, up, viaTor)
-}
-
-// relay передаёт данные. pre — уже открытое соединение для первой попытки.
-func (e *Engine) relay(client net.Conn, br *bufio.Reader, host string, port int, first []byte, pre net.Conn, viaTor bool) {
+// relay передаёт данные. pre — уже открытое соединение для первой попытки,
+// via — через какой запасной путь оно открыто ("" — напрямую).
+func (e *Engine) relay(client net.Conn, br *bufio.Reader, host string, port int, first []byte, pre net.Conn, via string) {
 	_ = client.SetDeadline(time.Time{})
 	if first == nil {
 		first = readFirst(client, br)
 	}
-	// Через Tor или протокол, где первым говорит сервер, — просто соединяем.
-	if viaTor || len(first) == 0 {
+	// Через WARP/Tor, протокол, где первым говорит сервер, или поток, по которому нельзя
+	// судить о блокировке, — просто соединяем.
+	if via != "" || !checkable(first) {
 		if len(first) > 0 {
-			if _, err := pre.Write(first); err != nil {
+			strat := StratNone
+			if via == "" {
+				strat = e.learnedDPI(host)
+			}
+			if err := SendFirst(pre, first, strat); err != nil {
 				pre.Close()
 				return
 			}
@@ -517,28 +669,32 @@ func (e *Engine) relay(client net.Conn, br *bufio.Reader, host string, port int,
 		pre.Close()
 	}
 
-	// Обход DPI не помог — последняя попытка через Tor.
-	if e.torFallbackAllowed() && !isLocalAddr(host) {
-		e.logf("%s: обход DPI не помог (%s), пробую Tor", host, shortErr(lastErr))
-		up, err := e.torDial(host, port)
-		if err == nil {
-			if _, err = up.Write(first); err == nil {
-				_ = up.SetReadDeadline(time.Now().Add(30 * time.Second))
-				resp := make([]byte, 32*1024)
-				n, rerr := up.Read(resp)
-				_ = up.SetReadDeadline(time.Time{})
-				if n > 0 {
-					e.markOK(host, StratTor, true)
-					if _, err := client.Write(resp[:n]); err == nil {
-						pipe(client, br, up, nil)
-						return
+	// Обход DPI не помог — последняя попытка через WARP/Tor.
+	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) {
+		e.logf("%s: обход DPI не помог (%s), пробую %s", host, shortErr(lastErr), upLabel(ups[0].Name()))
+		var errs []string
+		for _, u := range ups {
+			up, err := e.upDial(u, host, port)
+			if err == nil {
+				if _, err = up.Write(first); err == nil {
+					_ = up.SetReadDeadline(time.Now().Add(30 * time.Second))
+					resp := make([]byte, 32*1024)
+					n, rerr := up.Read(resp)
+					_ = up.SetReadDeadline(time.Time{})
+					if n > 0 {
+						e.markOK(host, u.Name(), true)
+						if _, err := client.Write(resp[:n]); err == nil {
+							pipe(client, br, up, nil)
+							return
+						}
 					}
+					err = rerr
 				}
-				err = rerr
+				up.Close()
 			}
-			up.Close()
+			errs = append(errs, fmt.Sprintf("через %s: %v", upLabel(u.Name()), shortErr(err)))
 		}
-		lastErr = fmt.Errorf("%v; через Tor: %v", shortErr(lastErr), err)
+		lastErr = fmt.Errorf("%v; %s", shortErr(lastErr), strings.Join(errs, "; "))
 	}
 	reason := "все методы не сработали"
 	if lastErr != nil {
@@ -547,13 +703,28 @@ func (e *Engine) relay(client net.Conn, br *bufio.Reader, host string, port int,
 	e.markBlocked(host, reason)
 }
 
+// learnedDPI — подобранный для сайта метод обхода DPI (для потоков без проверки ответа).
+func (e *Engine) learnedDPI(host string) string {
+	mode, _ := e.Mode.Load().(string)
+	if mode != "auto" && validStrategy(mode) && !isUpstreamStrat(mode) {
+		return mode
+	}
+	e.mu.Lock()
+	l := e.learned[host]
+	e.mu.Unlock()
+	if l == "" || isUpstreamStrat(l) {
+		return StratNone
+	}
+	return l
+}
+
 func shortErr(err error) string {
 	if err == nil {
 		return "нет ответа"
 	}
 	s := err.Error()
 	switch {
-	case strings.Contains(s, "; через Tor"):
+	case strings.Contains(s, "через Tor") || strings.Contains(s, "через WARP"):
 		return s
 	case strings.Contains(s, "timeout"):
 		return "нет ответа (DPI сбрасывает пакеты)"
@@ -566,7 +737,7 @@ func shortErr(err error) string {
 }
 
 func (e *Engine) markOK(host, strat string, retried bool) {
-	if strat != StratTLSRec && strat != StratNone {
+	if strat != StratTLSRec && strat != StratNone && !isUpstreamStrat(strat) {
 		e.fixed.Add(1)
 	}
 	e.mu.Lock()
@@ -644,12 +815,21 @@ func (e *Engine) TestHost(host string, insecure bool) ([]TestResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	_, dnsErr := e.Resolver.Lookup(ctx, h)
 	cancel()
-	if dnsErr != nil && !e.torAvailable() {
+	ups := map[string]Upstream{}
+	if e.torOn() {
+		ups[StratTor] = e.Tor
+	}
+	if e.warpOn() {
+		ups[StratWarp] = e.Warp
+	}
+	if dnsErr != nil && len(ups) == 0 {
 		return nil, dnsErr
 	}
 	strats := append([]string(nil), AutoOrder...)
-	if e.torAvailable() {
-		strats = append(strats, StratTor)
+	for _, n := range []string{StratWarp, StratTor} {
+		if ups[n] != nil {
+			strats = append(strats, n)
+		}
 	}
 	res := make([]TestResult, len(strats))
 	var wg sync.WaitGroup
@@ -660,15 +840,16 @@ func (e *Engine) TestHost(host string, insecure bool) ([]TestResult, error) {
 			r := TestResult{Strategy: strat, Name: StratNames[strat]}
 			start := time.Now()
 			timeout := 9 * time.Second
-			if strat == StratTor {
+			u := ups[strat]
+			if u != nil {
 				timeout = 60 * time.Second
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			var raw net.Conn
 			var err error
-			if strat == StratTor {
-				raw, err = e.torDial(h, port)
+			if u != nil {
+				raw, err = e.upDial(u, h, port)
 			} else if dnsErr != nil {
 				err = dnsErr
 			} else {
@@ -682,7 +863,7 @@ func (e *Engine) TestHost(host string, insecure bool) ([]TestResult, error) {
 			defer raw.Close()
 			_ = raw.SetDeadline(time.Now().Add(timeout - time.Second))
 			var conn net.Conn = &desyncConn{Conn: raw, strat: strat}
-			if strat == StratTor {
+			if u != nil {
 				conn = raw
 			}
 			tc := tls.Client(conn, &tls.Config{ServerName: h, InsecureSkipVerify: insecure, NextProtos: []string{"http/1.1"}})

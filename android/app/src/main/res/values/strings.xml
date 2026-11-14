@@ -8,25 +8,43 @@
     <string name="status_on">Шифрование включено</string>
     <string name="settings">Настройки</string>
     <string name="about">О программе</string>
-    <string name="about_text">Шифрует DNS и обходит блокировки провайдера прямо на устройстве — без VPN-подписок и своих серверов.\n\nСначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через сеть Tor.\n\nИспользуются: Tor (tor-android), lyrebird, hev-socks5-tunnel. Лицензия MIT.</string>
+    <string name="about_text">Шифрует DNS и обходит блокировки провайдера прямо на устройстве — без VPN-подписок и своих серверов.\n\nСначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (зашифрованный туннель, сайт видит IP Cloudflare) или сеть Tor.\n\nГолосовые звонки и прочий UDP работают; банки и сервисы с привязкой к стране можно пустить мимо «Обхода» в настройках.\n\nИспользуются: wireguard-go, gVisor, Tor (tor-android), lyrebird, hev-socks5-tunnel. Лицензия MIT.</string>
     <string name="ip_unknown">IP не определён</string>
     <string name="sub_off">Трафик идёт как обычно</string>
     <string name="route_label">Маршрут</string>
     <string name="bridges_label">Мосты Tor</string>
+    <string name="heavy_label">Если сайт заблокирован по IP</string>
+    <string name="apps_label">Приложения мимо «Обхода»</string>
+    <string name="apps_hint">Банки, госуслуги, Яндекс Музыка и другие сервисы с привязкой к стране работают напрямую, как без «Обхода».</string>
+    <string name="apps_button">Выбрать приложения</string>
+    <string name="apps_title">Мимо «Обхода»</string>
+    <string name="warp_reset">Новый аккаунт WARP</string>
     <string name="custom_hint">Свои мосты obfs4 или webtunnel, по одной строке. Получить: Telegram-бот @GetBridgesBot</string>
     <string name="save">Сохранить</string>
     <string name="log_label">Журнал</string>
     <string name="notif_channel">Работа VPN</string>
     <string name="notif_text">Обход блокировок включён</string>
-    <string name="hint">Сначала соединение идёт напрямую с обходом DPI. Если сайт заблокирован по IP или обход не помог — автоматически через Tor. Сайт запоминается.</string>
+    <string name="hint">Сначала соединение идёт напрямую с обходом DPI. Если сайт заблокирован по IP или обход не помог — автоматически через WARP или Tor. Сайт запоминается. WARP — бесплатный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш.</string>
     <string-array name="route_names">
-        <item>Авто: обход DPI, при блокировке — Tor</item>
+        <item>Авто: обход DPI, при блокировке — WARP/Tor</item>
         <item>Только обход DPI</item>
+        <item>Всё через WARP (смена IP)</item>
         <item>Всё через Tor</item>
     </string-array>
     <string-array name="route_values">
         <item>auto</item>
         <item>dpi</item>
+        <item>warp</item>
+        <item>tor</item>
+    </string-array>
+    <string-array name="heavy_names">
+        <item>Сначала WARP, затем Tor</item>
+        <item>Только WARP</item>
+        <item>Только Tor</item>
+    </string-array>
+    <string-array name="heavy_values">
+        <item>warp-tor</item>
+        <item>warp</item>
         <item>tor</item>
     </string-array>
     <string-array name="bridge_names">

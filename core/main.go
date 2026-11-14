@@ -33,7 +33,7 @@ import (
 
 const appName = "Obhod"
 
-var appVersion = "0.5.1" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.6.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -52,7 +52,8 @@ var logoWebPNG []byte
 type Settings struct {
 	Port          int               `json:"port"`
 	Mode          string            `json:"mode"`  // метод обхода DPI: auto | метод
-	Route         string            `json:"route"` // auto | dpi | tor
+	Route         string            `json:"route"` // auto | dpi | warp | tor
+	Heavy         string            `json:"heavy"` // запасной путь в режиме «Авто»: warp-tor | warp | tor
 	Bridges       string            `json:"bridges"`
 	CustomBridges string            `json:"custom_bridges"`
 	SysProxy      bool              `json:"sys_proxy"`
@@ -62,10 +63,10 @@ type Settings struct {
 	Ver           int               `json:"ver"`
 }
 
-const settingsVer = 2
+const settingsVer = 3
 
 func defaultSettings() Settings {
-	return Settings{Port: 8881, Mode: "auto", Route: RouteAuto, Bridges: "auto",
+	return Settings{Port: 8881, Mode: "auto", Route: RouteAuto, Heavy: HeavyWarpTor, Bridges: "auto",
 		SysProxy: true, DoH: "cloudflare", AutoStart: true}
 }
 
@@ -74,7 +75,10 @@ func (s *Settings) normalize() {
 	if s.Port < 1024 || s.Port > 65535 {
 		s.Port = d.Port
 	}
-	if s.Mode != "auto" && (!validStrategy(s.Mode) || s.Mode == StratTor) {
+	if HeavyNames[s.Heavy] == "" {
+		s.Heavy = d.Heavy
+	}
+	if s.Mode != "auto" && (!validStrategy(s.Mode) || isUpstreamStrat(s.Mode)) {
 		s.Mode = d.Mode
 	}
 	if RouteNames[s.Route] == "" {
@@ -95,6 +99,8 @@ type App struct {
 	eng      *Engine
 	res      *Resolver
 	tor      *Tor
+	warp     *Warp
+	torSocks string // внешний Tor (Android)
 	token    string
 	addr     string
 	logs     []string
@@ -121,6 +127,10 @@ func (a *App) load() {
 	// v2: прежний вариант по умолчанию «Snowflake» часто не подключается — переводим на «Автовыбор».
 	if a.s.Ver < 2 && a.s.Bridges == "snowflake" {
 		a.s.Bridges = "auto"
+	}
+	// v3: появился WARP — по умолчанию сначала WARP, затем Tor.
+	if a.s.Ver < 3 {
+		a.s.Heavy = HeavyWarpTor
 	}
 	a.s.Ver = settingsVer
 	a.s.normalize()
@@ -208,7 +218,7 @@ func (a *App) applySettings(s Settings) error {
 	a.mu.Lock()
 	old := a.s
 	a.s.Port, a.s.Mode, a.s.Route, a.s.SysProxy, a.s.DoH, a.s.AutoStart = s.Port, s.Mode, s.Route, s.SysProxy, s.DoH, s.AutoStart
-	a.s.Bridges, a.s.CustomBridges = s.Bridges, s.CustomBridges
+	a.s.Bridges, a.s.CustomBridges, a.s.Heavy = s.Bridges, s.CustomBridges, s.Heavy
 	a.mu.Unlock()
 	a.eng.Mode.Store(s.Mode)
 	a.eng.Route.Store(s.Route)
@@ -218,18 +228,129 @@ func (a *App) applySettings(s Settings) error {
 		if s.Port != old.Port || s.SysProxy != old.SysProxy {
 			a.disable()
 			return a.enable()
-		} else if s.Route == RouteDPI {
-			a.tor.Stop()
-		} else if s.Bridges != old.Bridges || s.CustomBridges != old.CustomBridges || old.Route == RouteDPI {
-			a.startTor()
 		}
+		torChanged := s.Bridges != old.Bridges || s.CustomBridges != old.CustomBridges
+		a.startUpstreams(torChanged)
 	}
 	return nil
 }
 
+// Запасные пути в режиме «Авто».
+const (
+	HeavyWarpTor = "warp-tor"
+	HeavyWarp    = "warp"
+	HeavyTor     = "tor"
+)
+
+var HeavyNames = map[string]string{
+	HeavyWarpTor: "Сначала WARP, затем Tor",
+	HeavyWarp:    "Только WARP",
+	HeavyTor:     "Только Tor",
+}
+
+var heavyOrder = []string{HeavyWarpTor, HeavyWarp, HeavyTor}
+
+// needs — какие запасные пути нужны при текущих настройках.
+func (s Settings) needs() (warp, tor bool) {
+	switch s.Route {
+	case RouteWarp:
+		return true, false
+	case RouteTor:
+		return false, true
+	case RouteDPI:
+		return false, false
+	}
+	return s.Heavy != HeavyTor, s.Heavy != HeavyWarp
+}
+
+// startUpstreams запускает или останавливает WARP и Tor под текущие настройки.
+// restartTor — перезапустить Tor (сменились мосты).
+func (a *App) startUpstreams(restartTor bool) {
+	a.mu.Lock()
+	needWarp, needTor := a.s.needs()
+	a.mu.Unlock()
+	if needWarp {
+		a.warp.Start()
+	} else {
+		a.warp.Stop()
+	}
+	switch {
+	case !needTor:
+		a.tor.Stop()
+	case a.torSocks != "":
+		if !a.tor.Enabled() {
+			a.tor.UseExternal(a.torSocks)
+		}
+	case runtime.GOOS == "android":
+		// На Android Tor запускает приложение (TorService) и передаёт его адрес в -tor-socks.
+	case restartTor || !a.tor.Enabled():
+		a.startTor()
+	}
+}
+
+// routeSummary — что делает программа в текущем режиме (одна строка для главного экрана).
+func routeSummary(s Settings) string {
+	switch s.Route {
+	case RouteDPI:
+		return "Обход блокировок"
+	case RouteTor:
+		return "Весь трафик через Tor"
+	case RouteWarp:
+		return "Весь трафик через WARP (другой IP)"
+	}
+	switch s.Heavy {
+	case HeavyWarp:
+		return "Обход блокировок, при необходимости — WARP"
+	case HeavyTor:
+		return "Обход блокировок, при необходимости — Tor"
+	}
+	return "Обход блокировок, при необходимости — WARP или Tor"
+}
+
+// upstreamLines — состояние WARP и Tor для интерфейса: обычные строки и предупреждения.
+func (a *App) upstreamLines() (lines, warns []string) {
+	needW, needT := a.settings().needs()
+	if needW {
+		switch ws, we := a.warp.Status(); ws {
+		case "ready":
+			lines = append(lines, "WARP подключён")
+		case "starting":
+			lines = append(lines, "WARP подключается…")
+		case "error":
+			lines = append(lines, "WARP не подключился")
+			if we != "" {
+				warns = append(warns, we)
+			}
+		}
+	}
+	if needT {
+		ts, tp, te := a.tor.Status()
+		if te == "" {
+			a.mu.Lock()
+			te = a.torErr
+			a.mu.Unlock()
+		}
+		switch ts {
+		case "ready":
+			lines = append(lines, "Tor подключён")
+		case "starting":
+			lines = append(lines, fmt.Sprintf("Tor подключается… %d%%", tp))
+			if a.tor.Stalled() {
+				warns = append(warns, StallHint)
+			}
+		default:
+			if te != "" {
+				lines = append(lines, "Tor не запущен")
+				warns = append(warns, te)
+			}
+		}
+	}
+	return lines, warns
+}
+
 func (a *App) enable() error {
 	a.mu.Lock()
-	port, sys, route := a.s.Port, a.s.SysProxy, a.s.Route
+	port, sys := a.s.Port, a.s.SysProxy
 	a.mu.Unlock()
 	if err := a.eng.Start(port); err != nil {
 		return err
@@ -243,9 +364,7 @@ func (a *App) enable() error {
 			a.logf("Системный прокси включён")
 		}
 	}
-	if route != RouteDPI {
-		a.startTor()
-	}
+	a.startUpstreams(true)
 	return nil
 }
 
@@ -256,6 +375,7 @@ func (a *App) disable() {
 	UnsetSystemProxy(port)
 	a.eng.Stop()
 	a.tor.Stop()
+	a.warp.Stop()
 }
 
 func (a *App) state() map[string]any {
@@ -283,7 +403,11 @@ func (a *App) state() map[string]any {
 		}
 		return out
 	}
+	upLines, upWarns := a.upstreamLines()
+	summary := routeSummary(a.settings())
 	ts, tp, te := a.tor.Status()
+	ws, we := a.warp.Status()
+	wep := a.warp.Endpoint()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if te == "" {
@@ -295,7 +419,12 @@ func (a *App) state() map[string]any {
 		"learned":    ls,
 		"blocked":    bs,
 		"strategies": kv(AutoOrder, StratNames),
-		"routes":     kv([]string{RouteAuto, RouteDPI, RouteTor}, RouteNames),
+		"routes":     kv([]string{RouteAuto, RouteDPI, RouteWarp, RouteTor}, RouteNames),
+		"heavies":    kv(heavyOrder, HeavyNames),
+		"up_lines":   upLines,
+		"up_warns":   upWarns,
+		"summary":    summary,
+		"warp":       map[string]any{"status": ws, "error": we, "endpoint": wep},
 		"bridges":    kv(bridgeOrder, BridgeNames),
 		"tor":        map[string]any{"status": ts, "progress": tp, "error": te},
 		"active":     a.eng.conns.Load(),
@@ -441,7 +570,9 @@ func main() {
 		headless   = flag.Bool("headless", false, "без интерфейса: только прокси (Android, сервер, роутер)")
 		dataFlag   = flag.String("data", "", "папка данных")
 		portFlag   = flag.Int("port", 0, "порт прокси (по умолчанию из настроек, 8881)")
-		routeFlag  = flag.String("route", "", "маршрут: auto | dpi | tor")
+		routeFlag  = flag.String("route", "", "маршрут: auto | dpi | warp | tor")
+		heavyFlag  = flag.String("heavy", "", "запасной путь в режиме auto: warp-tor | warp | tor")
+		torLog     = flag.String("tor-log", "", "журнал внешнего Tor (Android): torrc пишет его, ядро читает")
 		stratFlag  = flag.String("strategy", "", "метод обхода DPI: auto | tlsrec | split | ...")
 		dohFlag    = flag.String("doh", "", "DoH: cloudflare | google | quad9")
 		torSocks   = flag.String("tor-socks", "", "адрес уже запущенного Tor SOCKS (Android: TorService)")
@@ -470,6 +601,9 @@ func main() {
 	if *routeFlag != "" {
 		a.s.Route = *routeFlag
 	}
+	if *heavyFlag != "" {
+		a.s.Heavy = *heavyFlag
+	}
 	if *stratFlag != "" {
 		a.s.Mode = *stratFlag
 	}
@@ -489,7 +623,7 @@ func main() {
 	// Android: приложение просит собрать torrc для TorService.
 	if *writeTorrc != "" {
 		torrc, err := BuildTorrc(TorOptions{Bridges: a.s.Bridges, Custom: a.s.CustomBridges, SocksAddr: torSocksAddr,
-			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true})
+			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true, LogFile: *torLog})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "torrc:", err)
 			os.Exit(1)
@@ -508,6 +642,11 @@ func main() {
 	a.tor = NewTor(a.logf)
 	a.eng = NewEngine(a.res, a.logf)
 	a.eng.Tor = a.tor
+	a.warp = NewWarp(a.dir, a.logf)
+	a.warp.DialTLS = a.eng.dialTLSBypass
+	a.eng.Warp = a.warp
+	a.eng.BlockQUIC = true
+	a.torSocks = *torSocks
 	a.eng.Mode.Store(a.s.Mode)
 	a.eng.Route.Store(a.s.Route)
 	a.eng.SetLearned(a.s.Learned)
@@ -536,12 +675,9 @@ func main() {
 		if err := a.eng.Start(a.s.Port); err != nil {
 			log.Fatal(err)
 		}
-		if a.s.Route != RouteDPI {
-			if *torSocks != "" {
-				a.tor.UseExternal(*torSocks)
-			} else {
-				a.startTor()
-			}
+		a.startUpstreams(true)
+		if *torLog != "" && a.torSocks != "" {
+			go tailTorLog(*torLog, a.tor, a.logf)
 		}
 		fmt.Printf("%s %s: прокси HTTP/SOCKS5 на 127.0.0.1:%d, маршрут %s (Ctrl+C — выход)\n", appName, appVersion, a.s.Port, a.s.Route)
 		go func() {

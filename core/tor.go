@@ -63,7 +63,8 @@ type TorOptions struct {
 	WorkDir      string // рабочая папка процесса tor
 	LyrebirdPath string // явный путь к lyrebird (Android: liblyrebird.so)
 	GeoIPDir     string
-	ForAndroid   bool // DataDirectory и порты управления задаёт TorService
+	ForAndroid   bool   // DataDirectory и порты управления задаёт TorService
+	LogFile      string // Android: куда tor пишет журнал (его читает ядро — для прогресса и причин ошибок)
 }
 
 var reBridgeTransport = regexp.MustCompile(`^\s*(?:Bridge\s+)?([a-z_0-9]+)\s`)
@@ -76,6 +77,9 @@ func BuildTorrc(o TorOptions) (string, error) {
 	w("SOCKSPort %s", o.SocksAddr)
 	w("ClientOnly 1")
 	w("AvoidDiskWrites 1")
+	if o.ForAndroid && o.LogFile != "" {
+		w("Log notice file %s", o.LogFile)
+	}
 	if !o.ForAndroid {
 		w("DataDirectory %s", o.DataDir)
 		w("Log notice stdout")
@@ -476,6 +480,9 @@ func (t *Tor) Stop() {
 	}
 }
 
+// Name — имя маршрута (для Upstream).
+func (t *Tor) Name() string { return StratTor }
+
 // Dial открывает соединение через Tor; DNS разрешается на стороне Tor.
 func (t *Tor) Dial(ctx context.Context, host string, port int) (net.Conn, error) {
 	t.mu.Lock()
@@ -484,7 +491,35 @@ func (t *Tor) Dial(ctx context.Context, host string, port int) (net.Conn, error)
 	if st != "ready" && st != "starting" {
 		return nil, errors.New("Tor выключен")
 	}
-	return socksDial(ctx, socks, host, port)
+	c, err := socksDial(ctx, socks, host, port)
+	if err != nil && strings.HasPrefix(err.Error(), "Tor SOCKS недоступен") {
+		t.lost()
+	}
+	return c, err
+}
+
+// lost — внешний Tor (TorService на Android) перестал отвечать: считаем его снова подключающимся,
+// чтобы сайты не отправлялись в «мёртвый» Tor, и следим, когда он вернётся.
+func (t *Tor) lost() {
+	t.mu.Lock()
+	if !t.external || t.status != "ready" {
+		t.mu.Unlock()
+		return
+	}
+	t.status, t.progress = "starting", 0
+	t.ready = make(chan struct{})
+	t.mu.Unlock()
+	t.logf("Tor перестал отвечать — пока он не вернётся, сайты открываются без него")
+	go t.watchExternal()
+}
+
+// SetProgress — прогресс подключения внешнего Tor (из его журнала).
+func (t *Tor) SetProgress(p int) {
+	t.mu.Lock()
+	if t.external && t.status == "starting" && p > t.progress {
+		t.progress, t.changed = p, time.Now()
+	}
+	t.mu.Unlock()
 }
 
 var socksErrors = map[byte]string{
@@ -598,4 +633,59 @@ func FindTor() (*TorPaths, error) {
 		return &TorPaths{Root: filepath.Dir(p), Exe: p}, nil
 	}
 	return nil, errors.New("tor не найден рядом с программой")
+}
+
+// tailTorLog читает журнал внешнего Tor (Android): прогресс подключения и предупреждения
+// попадают в журнал программы, по ним же понятно, почему Tor не подключается.
+func tailTorLog(path string, t *Tor, logf func(string, ...any)) {
+	var off int64
+	var partial string
+	lastPct := -1
+	seen := map[string]bool{}
+	for {
+		time.Sleep(700 * time.Millisecond)
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		st, err := f.Stat()
+		if err != nil {
+			f.Close()
+			continue
+		}
+		if st.Size() < off { // tor перезапустился и начал журнал заново
+			off, partial, lastPct = 0, "", -1
+			seen = map[string]bool{}
+		}
+		if st.Size() == off {
+			f.Close()
+			continue
+		}
+		buf := make([]byte, st.Size()-off)
+		n, _ := f.ReadAt(buf, off)
+		f.Close()
+		off += int64(n)
+		text := partial + string(buf[:n])
+		lines := strings.Split(text, "\n")
+		partial = lines[len(lines)-1]
+		for _, line := range lines[:len(lines)-1] {
+			line = strings.TrimSpace(line)
+			if m := reBootstrap.FindStringSubmatch(line); m != nil {
+				p, _ := strconv.Atoi(m[1])
+				t.SetProgress(p)
+				if p != lastPct {
+					lastPct = p
+					logf("Tor: подключение %d%%", p)
+				}
+				continue
+			}
+			if strings.Contains(line, "[warn]") || strings.Contains(line, "[err]") {
+				msg := trimTorLog(line)
+				if !seen[msg] && len(seen) < 200 {
+					seen[msg] = true
+					logf("Tor: %s", msg)
+				}
+			}
+		}
+	}
 }
