@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Обход</string>
+    <string name="app_name">Aristocrat NET</string>
     <string name="connect">Включить</string>
     <string name="disconnect">Выключить</string>
     <string name="status_off">Выключено</string>
@@ -8,7 +8,7 @@
     <string name="status_on">Шифрование включено</string>
     <string name="settings">Настройки</string>
     <string name="about">О программе</string>
-    <string name="about_text">Шифрует DNS и обходит блокировки провайдера прямо на устройстве — без VPN-подписок и своих серверов.\n\nСначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (зашифрованный туннель, сайт видит IP Cloudflare) или сеть Tor.\n\nГолосовые звонки и прочий UDP работают; банки и сервисы с привязкой к стране можно пустить мимо «Обхода» в настройках.\n\nИспользуются: wireguard-go, gVisor, Tor (tor-android), lyrebird, hev-socks5-tunnel. Лицензия MIT.</string>
+    <string name="about_text">Шифрует DNS и обходит блокировки провайдера прямо на устройстве — без VPN-подписок и своих серверов.\n\nСначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (зашифрованный туннель, сайт видит IP Cloudflare) или сеть Tor.\n\nГолосовые звонки и прочий UDP работают; банки и сервисы с привязкой к стране можно пустить мимо Aristocrat NET в настройках.\n\nИспользуются: wireguard-go, gVisor, Tor (tor-android), lyrebird, hev-socks5-tunnel. Лицензия MIT.</string>
     <string name="ip_unknown">IP не определён</string>
     <string name="sub_off">Трафик идёт как обычно</string>
     <string name="route_label">Маршрут</string>
@@ -17,14 +17,18 @@
     <string name="heavy_label">Если сайт заблокирован по IP</string>
     <string name="keep_local">Российские и казахстанские сайты — напрямую, с настоящим IP (даже в режимах Tor и WARP)</string>
     <string name="geo_tor">В России: Spotify и другие сервисы, закрытые для России, — через Tor (даже в «Авто»)</string>
-    <string name="apps_label">Приложения мимо «Обхода»</string>
-    <string name="apps_hint">Банки, госуслуги, Яндекс Музыка и другие сервисы с привязкой к стране работают напрямую, как без «Обхода».</string>
+    <string name="apps_label">Приложения мимо Aristocrat NET</string>
+    <string name="apps_hint">Банки, госуслуги, Яндекс Музыка и другие сервисы с привязкой к стране работают напрямую, как без Aristocrat NET.</string>
     <string name="apps_button">Выбрать приложения</string>
-    <string name="apps_title">Мимо «Обхода»</string>
+    <string name="apps_title">Мимо Aristocrat NET</string>
     <string name="warp_reset">Новый аккаунт WARP</string>
     <string name="custom_hint">Свои мосты obfs4 или webtunnel, по одной строке. Получить: Telegram-бот @GetBridgesBot</string>
     <string name="save">Сохранить</string>
     <string name="log_label">Журнал</string>
+    <string name="log_label_row">Журнал  ›</string>
+    <string name="other_label">Другие</string>
+    <string name="copy">Копировать</string>
+    <string name="copied">Журнал скопирован</string>
     <string name="notif_channel">Работа VPN</string>
     <string name="notif_text">Обход блокировок включён</string>
     <string name="hint">Сначала соединение идёт напрямую с обходом DPI. Если сайт заблокирован по IP или обход не помог — автоматически через WARP или Tor. Сайт запоминается. WARP — бесплатный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш.</string>

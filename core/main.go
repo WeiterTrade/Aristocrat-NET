@@ -33,9 +33,12 @@ import (
 	"time"
 )
 
-const appName = "Obhod"
+const appName = "Obhod" // имя папки данных (не меняется — чтобы сохранить настройки)
 
-var appVersion = "0.7.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+// appTitle — название программы для пользователя.
+const appTitle = "Aristocrat NET"
+
+var appVersion = "0.8.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -50,6 +53,9 @@ var planetOffPNG []byte
 
 //go:embed ui/logo.png
 var logoWebPNG []byte
+
+//go:embed ui/brand.png
+var brandPNG []byte
 
 type Settings struct {
 	Port          int               `json:"port"`
@@ -602,7 +608,7 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		_, _ = w.Write(indexHTML)
 	})
 	// Картинки интерфейса (планета, эмблема).
-	for path, data := range map[string][]byte{"/planet-on.png": planetOnPNG, "/planet-off.png": planetOffPNG, "/logo.png": logoWebPNG} {
+	for path, data := range map[string][]byte{"/planet-on.png": planetOnPNG, "/planet-off.png": planetOffPNG, "/logo.png": logoWebPNG, "/brand.png": brandPNG} {
 		data := data
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 			if r.Host != a.addr {

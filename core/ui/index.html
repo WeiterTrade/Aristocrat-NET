@@ -3,99 +3,118 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Обход</title>
+<title>Aristocrat NET</title>
 <style>
-  /* Палитра «Земля и небо» */
-  :root { --bg:#eef4f9; --card:#fff; --text:#14273a; --muted:#5e7286; --line:#d3dfe9;
-          --accent:#1f5f99; --ok:#158a63; --warn:#b43c0c; --off:#8197ab; --navy:#0e2d4a; }
+  /* Палитра Aristocrat NET */
+  :root { --bg:#0A0F1F; --grad:#102542; --deep:#0B2D6B; --royal:#1E63D3; --sky:#4DA8FF; --light:#B7E0FF;
+          --gold:#D4AF37; --goldl:#F7E7B8; --turq:#00E5FF; --steel:#7B8CA7; --dgray:#2A2F45;
+          --card:#111A33; --hover:#18264A; --line:#222E52; --text:#EEF3FB; --danger:#FF6B6B; }
   * { box-sizing:border-box; }
   html, body { height:100%; }
-  body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--text);
-         /* небо с лучами */
-         background:radial-gradient(circle at 50% 38%, rgba(18,90,168,0) 25%, rgba(18,90,168,.9) 90%),
-                    repeating-conic-gradient(from 0deg at 50% 38%, rgba(255,255,255,.09) 0deg, rgba(255,255,255,0) 7deg 13deg, rgba(255,255,255,.09) 20deg),
-                    radial-gradient(circle at 50% 38%, #7ccff4 0%, #3b97d6 35%, #125aa8 80%) fixed; min-height:100vh; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--text); background:var(--bg); }
   .hidden { display:none !important; }
+  button { font:inherit; }
 
-  /* ---- Главный экран ---- */
+  /* ---- Главный экран: космос, лучи, планета ---- */
   #home { position:relative; height:100vh; max-width:460px; margin:0 auto; display:flex; flex-direction:column;
           align-items:center; justify-content:center; padding:24px; text-align:center; }
-  .about-link { position:absolute; top:16px; right:18px; background:none; border:0; color:#fff;
-                font:inherit; cursor:pointer; padding:6px 8px; border-radius:8px; }
-  .about-link:hover, .about-link:focus-visible { color:var(--text); background:var(--line); }
+  body.home { background:radial-gradient(circle at 50% 38%, rgba(11,45,107,.0) 20%, rgba(10,15,31,.95) 85%),
+                repeating-conic-gradient(from 0deg at 50% 38%, rgba(77,168,255,.10) 0deg, rgba(77,168,255,0) 6deg 14deg, rgba(77,168,255,.10) 20deg),
+                radial-gradient(circle at 50% 38%, #0B2D6B 0%, #102542 40%, #0A0F1F 85%) fixed; }
+  .brand { position:absolute; top:14px; left:18px; display:flex; align-items:center; gap:8px; font-weight:600; letter-spacing:.3px; }
+  .brand img { width:26px; height:26px; }
+  .brand .a { color:var(--gold); } .brand .n { color:var(--light); }
+  .about-link { position:absolute; top:14px; right:14px; background:none; border:0; color:var(--light); cursor:pointer; padding:6px 10px; border-radius:10px; }
+  .about-link:hover, .about-link:focus-visible { background:rgba(77,168,255,.12); }
   .gear { position:absolute; bottom:18px; left:18px; width:50px; height:50px; border-radius:50%; border:1px solid var(--line);
-          background:#fff; color:var(--muted); font-size:24px; line-height:1; cursor:pointer; }
-  .gear:hover, .gear:focus-visible { color:var(--text); border-color:var(--muted); }
-  /* Кнопка-планета */
-  .power { width:230px; height:230px; border-radius:50%; border:0; cursor:pointer; color:#fff;
-           font:600 22px system-ui,sans-serif; text-shadow:1px 2px 2px #0b335c;
+          background:var(--card); color:var(--light); font-size:24px; line-height:1; cursor:pointer; }
+  .gear:hover, .gear:focus-visible { border-color:var(--sky); box-shadow:0 0 14px rgba(77,168,255,.35); }
+  .ver { position:absolute; bottom:32px; right:20px; color:var(--steel); font-size:12px; }
+  .power { width:240px; height:240px; border-radius:50%; border:0; cursor:pointer; color:#fff;
+           font:600 22px system-ui,sans-serif; text-shadow:1px 2px 3px #0A0F1F;
            background:url(/planet-off.png) center/contain no-repeat; transition:transform .15s; }
   .power.on { background-image:url(/planet-on.png); }
   .power:hover { transform:scale(1.02); }
-  .power.busy { background-image:url(/planet-on.png); filter:saturate(.6) brightness(.95); animation:pulse 1.2s infinite; }
-  .power:focus-visible { outline:3px solid var(--text); outline-offset:8px; }
-  @keyframes pulse { 50% { box-shadow:0 0 0 22px color-mix(in srgb,var(--accent) 10%,transparent); } }
-  .state { margin-top:24px; font-size:19px; font-weight:600; color:#fff; }
-  .state.on { color:#c8ffd8; }
-  .ip b { font-weight:500; }
-  .sub { color:#ddeefb; font-size:13px; margin-top:4px; min-height:19px; }
-  .ip { margin-top:20px; font-size:15px; background:#fff; border:1px solid var(--line); border-radius:999px;
-        padding:9px 18px; display:inline-flex; align-items:center; gap:8px; }
+  .power.busy { background-image:url(/planet-on.png); filter:saturate(.7) brightness(.95); animation:pulse 1.2s infinite; }
+  .power:focus-visible { outline:3px solid var(--gold); outline-offset:6px; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 22px rgba(77,168,255,.12); } }
+  .state { margin-top:22px; font-size:19px; font-weight:600; color:#fff; }
+  .state.on { color:var(--goldl); }
+  .sub { color:var(--light); font-size:13px; margin-top:4px; min-height:19px; }
+  .ip { margin-top:18px; font-size:15px; background:var(--card); border:1px solid var(--gold); border-radius:999px;
+        padding:9px 18px; display:inline-flex; align-items:center; gap:8px; color:var(--text); }
   .ip b { font-family:ui-monospace,Consolas,monospace; font-weight:600; }
-  .flag { width:24px; height:18px; vertical-align:-3px; margin:0 2px; border-radius:2px; box-shadow:0 0 0 1px rgba(0,0,0,.12); }
-  .err { color:#ffe0b8; font-size:13px; margin-top:10px; white-space:pre-wrap; max-width:380px; }
-  #settings .err, .modal .err { color:var(--warn); }
-  #settings h1, .back { color:#fff; }
+  .flag { width:24px; height:18px; vertical-align:-3px; margin:0 2px; border-radius:2px; }
+  .err { color:var(--goldl); font-size:13px; margin-top:10px; white-space:pre-wrap; max-width:380px; }
   .bar { height:4px; background:var(--line); border-radius:4px; margin:8px auto 0; width:200px; overflow:hidden; }
-  .bar i { display:block; height:100%; background:var(--accent); }
+  .bar i { display:block; height:100%; background:linear-gradient(90deg,var(--royal),var(--sky)); }
 
-  /* ---- Настройки ---- */
-  #settings { max-width:460px; margin:0 auto; padding:14px 16px 28px; }
-  .top { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-  .back { background:none; border:0; color:var(--text); font-size:22px; cursor:pointer; padding:4px 10px; border-radius:8px; }
-  .back:hover { background:var(--line); }
-  h1 { font-size:18px; margin:0; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:12px; }
-  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin:0 0 10px; font-weight:600; }
-  input[type=text], input[type=number], select, textarea { border:1px solid var(--line); border-radius:10px; padding:9px 10px;
-           background:var(--bg); color:var(--text); font:inherit; }
-  input[type=text], textarea { width:100%; }
-  textarea { font:12px ui-monospace,Consolas,monospace; }
-  .btn { border:0; border-radius:10px; padding:9px 14px; font:inherit; font-weight:600; cursor:pointer; background:var(--accent); color:#fff; white-space:nowrap; }
-  .btn.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  /* ---- Настройки: страницы со списками ---- */
+  #settings { max-width:520px; margin:0 auto; min-height:100vh; padding:0 0 28px; background:linear-gradient(var(--grad), var(--bg) 260px); }
+  .top { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:6px; padding:10px 12px;
+         background:rgba(10,15,31,.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); }
+  .back { background:none; border:0; color:var(--goldl); font-size:22px; cursor:pointer; padding:2px 10px; border-radius:10px; }
+  .back:hover { background:var(--hover); }
+  .top h1 { font-size:17px; margin:0; font-weight:600; }
+  .page { padding:6px 16px; }
+  .status { margin:10px 0 4px; padding:12px 14px; border-radius:14px; border:1px solid var(--line);
+            background:linear-gradient(var(--deep), var(--grad)); font-size:13px; color:var(--light); white-space:pre-line; }
+  .status b { color:var(--goldl); font-weight:600; display:block; }
+  .status .w { color:var(--gold); }
+  .sec { color:var(--gold); font-weight:600; font-size:13px; margin:18px 4px 8px; }
+  .list { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  .item { display:flex; align-items:center; gap:10px; padding:13px 16px; cursor:pointer; border-top:1px solid var(--line); min-height:50px; }
+  .item:first-child { border-top:0; }
+  .item:hover { background:var(--hover); }
+  .item .t { flex:1; min-width:0; }
+  .item .t div:first-child { color:var(--text); }
+  .item .t .s { color:var(--steel); font-size:12px; margin-top:2px; }
+  .item .v { color:var(--steel); font-size:13px; white-space:nowrap; max-width:45%; overflow:hidden; text-overflow:ellipsis; }
+  .item .ch { color:var(--steel); font-size:22px; line-height:1; }
+  .item.sel .t div:first-child { color:var(--goldl); }
+  .item .ok { color:var(--gold); font-size:17px; }
+  .item.danger .t div:first-child { color:var(--danger); }
+  .sw { width:42px; height:24px; border-radius:12px; background:var(--dgray); border:1px solid var(--line); position:relative; flex:none; transition:.15s; }
+  .sw::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:var(--steel); transition:.15s; }
+  .sw.on { background:linear-gradient(var(--sky), var(--royal)); border-color:var(--sky); box-shadow:0 0 10px rgba(77,168,255,.45); }
+  .sw.on::after { left:21px; background:#fff; }
+  .note { color:var(--steel); font-size:13px; margin:12px 4px; }
+  .field { width:100%; background:var(--card); color:var(--text); border:1px solid var(--line); border-radius:12px; padding:11px 12px; font:inherit; outline:none; }
+  .field:focus { border-color:var(--sky); box-shadow:0 0 0 3px rgba(77,168,255,.15); }
+  textarea.field { font:12px ui-monospace,Consolas,monospace; resize:vertical; }
+  .btns { display:flex; gap:10px; margin:12px 0; }
+  .btn { border-radius:999px; padding:10px 22px; font-weight:600; cursor:pointer; border:1px solid var(--sky); color:#fff;
+         background:linear-gradient(var(--royal), var(--deep)); box-shadow:0 0 14px rgba(30,99,211,.35); white-space:nowrap; }
+  .btn.ghost { background:transparent; border-color:var(--gold); color:var(--goldl); box-shadow:none; }
   .btn:disabled { opacity:.6; cursor:default; }
-  .row { display:flex; gap:8px; align-items:center; }
-  .opt { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; }
-  .opt .l { flex:1; } .opt.col { flex-direction:column; align-items:stretch; } .opt.col select { width:100%; }
-  .hint { color:var(--muted); font-size:12px; }
-  table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
-  td { padding:6px 4px; border-top:1px solid var(--line); vertical-align:top; }
-  td.r { text-align:right; color:var(--muted); white-space:nowrap; }
-  .yes { color:var(--ok); font-weight:600; } .no { color:var(--warn); }
-  .info { color:var(--muted); font-size:12px; word-break:break-word; }
-  .verdict { margin-top:10px; padding:10px; border-radius:10px; background:var(--bg); font-size:13px; }
-  .list { font-size:13px; }
-  .list .it { display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--line); }
-  .list .it:first-child { border-top:0; }
-  .list .h { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
-  .tag { font-size:11px; padding:2px 7px; border-radius:20px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); white-space:nowrap; }
-  .tag.bad { background:color-mix(in srgb,var(--warn) 12%,transparent); color:var(--warn); }
-  .tag.tor { background:color-mix(in srgb,#7d4698 18%,transparent); color:#a46bc4; }
-  .x { border:0; background:none; color:var(--muted); cursor:pointer; font-size:14px; }
-  .empty { color:var(--muted); font-size:13px; }
-  details summary { cursor:pointer; color:var(--muted); font-size:13px; }
-  pre { max-height:260px; overflow:auto; background:var(--bg); border-radius:10px; padding:10px; font-size:11px; margin:10px 0 0; white-space:pre-wrap; word-break:break-all; }
+  pre.log { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin:0; font-size:11px;
+            white-space:pre-wrap; word-break:break-all; height:calc(100vh - 150px); overflow:auto; color:var(--light); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td { padding:8px 12px; border-top:1px solid var(--line); vertical-align:top; }
+  tr:first-child td { border-top:0; }
+  td.r { text-align:right; white-space:nowrap; }
+  .yes { color:var(--gold); font-weight:600; } .no { color:var(--danger); }
+  .info { color:var(--steel); font-size:12px; word-break:break-word; }
+  .verdict { margin:12px 0; padding:12px 14px; border-radius:12px; background:var(--card); border:1px solid var(--line); font-size:13px; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:20px; background:rgba(77,168,255,.15); color:var(--sky); white-space:nowrap; }
+  .tag.bad { background:rgba(255,107,107,.15); color:var(--danger); }
+  .tag.tor { background:rgba(212,175,55,.15); color:var(--gold); }
+  .x { border:0; background:none; color:var(--steel); cursor:pointer; font-size:14px; }
+  .toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:var(--gold); color:var(--bg);
+           padding:8px 18px; border-radius:999px; font-weight:600; }
 
   /* ---- О программе ---- */
-  .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; padding:16px; }
-  .modal .card { max-width:380px; width:100%; margin:0; }
-  .modal p { margin:8px 0; font-size:13px; }
+  .modal { position:fixed; inset:0; background:rgba(5,8,18,.75); display:flex; align-items:center; justify-content:center; padding:16px; }
+  .modal .card { max-width:400px; width:100%; background:linear-gradient(var(--grad),var(--bg)); border:1px solid var(--line); border-radius:18px; padding:20px; }
+  .modal p { margin:8px 0; font-size:13px; color:var(--text); }
+  .modal .hint { color:var(--steel); }
 </style>
 </head>
-<body>
+<body class="home">
 
 <!-- Главный экран -->
 <section id="home">
+  <div class="brand"><img src="/logo.png" alt=""><span class="a">Aristocrat</span><span class="n">NET</span></div>
   <button class="about-link" id="aboutBtn">О программе</button>
   <button class="power" id="power">Включить</button>
   <div class="state" id="state">Выключено</div>
@@ -103,83 +122,31 @@
   <div class="ip" id="ip">Ваш IP: <b>…</b></div>
   <div class="err" id="err"></div>
   <button class="gear" id="gear" title="Настройки" aria-label="Настройки">⚙</button>
+  <div class="ver" id="ver"></div>
 </section>
 
 <!-- Настройки -->
 <section id="settings" class="hidden">
-  <div class="top"><button class="back" id="back" aria-label="Назад">←</button><h1>Настройки</h1></div>
-
-  <div class="card">
-    <h2>Подключение</h2>
-    <div class="opt col"><div class="l">Маршрут</div><select id="route"></select></div>
-    <div class="opt"><div class="l">Метод обхода DPI<br><span class="hint">«Авто» подбирает метод для каждого сайта</span></div>
-      <select id="mode"></select></div>
-    <div class="opt" id="heavyBox"><div class="l">Если сайт заблокирован по IP<br><span class="hint">WARP — бесплатный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш</span></div>
-      <select id="heavy"></select></div>
-    <div id="torBox">
-      <div class="opt"><div class="l">Мосты Tor<br><span class="hint">Как подключаться к Tor (в РФ/РК без мостов он заблокирован)</span></div>
-        <select id="bridges"></select></div>
-      <div class="opt"><div class="l">Страна IP через Tor<br><span class="hint">Сайты увидят IP из этой страны (режим «Всё через Tor»; WARP страну не меняет)</span></div>
-        <select id="country"></select></div>
-      <div id="customBox" class="hidden" style="margin-top:8px">
-        <textarea id="custom" rows="4" spellcheck="false" placeholder="Строки мостов obfs4 или webtunnel, по одной в строке. Получить: Telegram-бот @GetBridgesBot"></textarea>
-        <button class="btn ghost" id="saveCustom" style="margin-top:6px">Сохранить мосты</button>
-      </div>
-    </div>
-    <div class="opt"><label class="l"><input type="checkbox" id="keepLocal"> Российские и казахстанские сайты — напрямую<br><span class="hint">С настоящим IP даже в режимах Tor и WARP: банки, госуслуги, Яндекс, VK, маркетплейсы</span></label></div>
-    <div class="opt"><label class="l"><input type="checkbox" id="geoTor"> В России: Spotify — через Tor<br><span class="hint">Сервисы, которые сами закрылись для России, открываются через Tor даже в «Авто». В Казахстане не действует</span></label></div>
-    <div class="hint" id="torline" style="margin-top:10px;white-space:pre-line"></div>
-  </div>
-
-  <div class="card">
-    <h2>Проверить сайт</h2>
-    <div class="row">
-      <input type="text" id="host" placeholder="например, youtube.com" spellcheck="false">
-      <button class="btn" id="test">Проверить</button>
-    </div>
-    <div id="testOut"></div>
-  </div>
-
-  <div class="card">
-    <h2>Сайты</h2>
-    <div class="list" id="sites"></div>
-  </div>
-
-  <div class="card">
-    <h2>Дополнительно</h2>
-    <div class="opt"><div class="l">Шифрованный DNS (DoH)</div>
-      <select id="doh"><option value="cloudflare">Cloudflare</option><option value="google">Google</option><option value="quad9">Quad9</option></select></div>
-    <div class="opt"><label class="l"><input type="checkbox" id="sys"> Системный прокси<br><span class="hint">Иначе укажите в браузере прокси 127.0.0.1:<span id="portLbl"></span> (HTTP или SOCKS5)</span></label></div>
-    <div class="opt"><label class="l"><input type="checkbox" id="auto"> Включать при запуске программы</label></div>
-    <div class="opt"><div class="l">Порт прокси</div><input type="number" id="port" min="1024" max="65535" style="width:100px"></div>
-  </div>
-
-  <div class="card">
-    <details id="logBox"><summary>Журнал</summary><pre id="logs"></pre></details>
-  </div>
-
-  <div class="row" style="justify-content:space-between">
-    <span class="hint" id="stats"></span>
-    <button class="btn ghost" id="quit">Выход из программы</button>
-  </div>
+  <div class="top"><button class="back" id="back" aria-label="Назад">←</button><h1 id="ptitle">Настройки</h1></div>
+  <div class="page" id="page"></div>
 </section>
 
 <!-- О программе -->
 <div class="modal hidden" id="about">
   <div class="card">
-    <div style="text-align:center"><img src="/logo.png" alt="" style="width:120px;height:120px"></div>
-    <p style="text-align:center"><b style="font-size:18px">Обход</b><br><span id="aboutVer" class="hint"></span></p>
+    <div style="text-align:center"><img src="/brand.png" alt="Aristocrat NET" style="width:220px"></div>
+    <p style="text-align:center"><span id="aboutVer" class="hint"></span></p>
     <p>Шифрует DNS и обходит блокировки провайдера прямо на вашем устройстве — без VPN-подписок и своих серверов.</p>
-    <p>Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor.</p>
+    <p>Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor. Российские и казахстанские сайты всегда открываются с вашим настоящим IP.</p>
     <p class="hint">Используются: wireguard-go, gVisor, Tor, lyrebird, hev-socks5-tunnel. Лицензия MIT.</p>
-    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="aboutClose">Закрыть</button></div>
+    <div class="btns" style="justify-content:flex-end"><button class="btn" id="aboutClose">Закрыть</button></div>
   </div>
 </div>
 
 <script>
 const TOKEN = location.hash.slice(1);
 const $ = id => document.getElementById(id);
-let S = null, busy = false, lastOn = null;
+let S = null, busy = false, lastOn = null, page = null, testHtml = '', testing = false;
 
 async function api(path, body) {
   const r = await fetch('/api/' + path, {
@@ -191,19 +158,12 @@ async function api(path, body) {
   if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
   return j;
 }
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
-function fill(id, items) { const el = $(id); if (!el.options.length) items.forEach(x => el.add(new Option(x.name, x.id))); }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+const nameOf = (list, id) => ((list || []).find(x => x.id === id) || {}).name || '';
+function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 1800); }
 
-function torText(s) {
-  if (!s.on) return '';
-  let lines = (s.up_lines || []).slice();
-  if (s.warp && s.warp.endpoint) lines = lines.map(l => l === 'WARP подключён' ? l + ' (узел ' + s.warp.endpoint + ')' : l);
-  return lines.concat(s.up_warns || []).join('\n');
-}
-
-function render(s) {
-  S = s; const st = s.settings;
-  // главный экран
+// ---------- главный экран ----------
+function renderHome(s) {
   const p = $('power');
   p.className = 'power' + (busy ? ' busy' : s.on ? ' on' : '');
   p.textContent = busy ? '…' : s.on ? 'Выключить' : 'Включить';
@@ -213,31 +173,177 @@ function render(s) {
   if (s.on && (s.up_lines || []).length) sub += '<br>' + esc(s.up_lines.join(' · '));
   if (s.on && s.tor.status === 'starting' && (s.up_lines || []).some(l => l.startsWith('Tor'))) sub += '<div class="bar"><i style="width:' + s.tor.progress + '%"></i></div>';
   $('sub').innerHTML = sub;
-  const errs = [s.proxy_err].concat(s.on ? (s.up_warns || []) : []).filter(Boolean);
-  $('err').textContent = errs.join('\n');
+  $('err').textContent = [s.proxy_err].concat(s.on ? (s.up_warns || []) : []).filter(Boolean).join('\n');
+  $('ver').textContent = 'v' + s.version;
+  $('aboutVer').textContent = 'версия ' + s.version;
   if (lastOn !== s.on) { lastOn = s.on; loadIP(); }
-
-  // настройки
-  fill('route', s.routes); fill('heavy', s.heavies); fill('bridges', s.bridges); fill('country', s.countries); fill('mode', [{ id: 'auto', name: 'Авто' }].concat(s.strategies));
-  $('route').value = st.route; $('heavy').value = st.heavy; $('bridges').value = st.bridges; $('country').value = st.tor_country || ''; $('mode').value = st.mode;
-  $('heavyBox').classList.toggle('hidden', st.route !== 'auto');
-  $('torBox').classList.toggle('hidden', !(st.route === 'tor' || (st.route === 'auto' && st.heavy !== 'warp')));
-  $('customBox').classList.toggle('hidden', st.bridges !== 'custom');
-  if (document.activeElement !== $('custom')) $('custom').value = st.custom_bridges || '';
-  $('torline').textContent = torText(s);
-  $('keepLocal').checked = st.keep_local; $('geoTor').checked = st.geo_tor;
-  $('doh').value = st.doh; $('sys').checked = st.sys_proxy; $('auto').checked = st.auto_start;
-  if (document.activeElement !== $('port')) $('port').value = st.port;
-  $('portLbl').textContent = st.port;
-  $('stats').textContent = s.on ? 'Соединений: ' + s.active + ' активных, ' + s.total + ' всего' : '';
-  $('aboutVer').textContent = 'v' + s.version;
-
-  let h = '';
-  (s.blocked || []).forEach(b => h += `<div class="it"><span class="h" title="${esc(b.reason)}">${esc(b.host)}<br><span class="info">${esc(b.reason)}</span></span><span class="tag bad">не открылся</span><button class="x" data-h="${esc(b.host)}">✕</button></div>`);
-  (s.learned || []).forEach(l => h += `<div class="it"><span class="h">${esc(l.host)}</span><span class="tag${l.strategy === 'tor' || l.strategy === 'warp' ? ' tor' : ''}">${esc(l.name)}</span><button class="x" data-h="${esc(l.host)}">✕</button></div>`);
-  $('sites').innerHTML = h || '<div class="empty">Здесь появятся сайты, для которых понадобился особый метод, WARP или Tor.</div>';
-  $('sites').querySelectorAll('.x').forEach(b => b.onclick = () => api('forget', { host: b.dataset.h }).then(render));
 }
+
+// ---------- страницы настроек ----------
+const routeHints = { auto: 'Сайты напрямую с обходом DPI; заблокированные по IP — через WARP или Tor', dpi: 'Самый быстрый: без смены IP, без WARP и Tor',
+  warp: 'Весь трафик через Cloudflare: другой IP, быстро (страна остаётся вашей)', tor: 'Весь трафик через Tor: IP другой страны, медленнее' };
+const shortRoute = { auto: 'Авто', dpi: 'Только DPI', warp: 'WARP', tor: 'Tor' };
+const dohs = [{ id: 'cloudflare', name: 'Cloudflare (1.1.1.1)' }, { id: 'google', name: 'Google (8.8.8.8)' }, { id: 'quad9', name: 'Quad9 (9.9.9.9)' }];
+const bridgeCount = t => (t || '').split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
+
+function row(o) {
+  const right = o.toggle !== undefined ? `<div class="sw${o.toggle ? ' on' : ''}"></div>`
+    : o.sel !== undefined ? (o.sel ? '<span class="ok">✓</span>' : '')
+    : o.nav ? `${o.v ? '<span class="v">' + esc(o.v) + '</span>' : ''}<span class="ch">›</span>` : (o.v ? '<span class="v">' + esc(o.v) + '</span>' : '');
+  return `<div class="item${o.sel ? ' sel' : ''}${o.danger ? ' danger' : ''}" data-a="${o.a || ''}"><div class="t"><div>${esc(o.t)}</div>${o.s ? '<div class="s">' + esc(o.s) + '</div>' : ''}</div>${right}</div>`;
+}
+const sec = (t, rows) => `<div class="sec">${esc(t)}</div><div class="list">${rows.join('')}</div>`;
+
+const radios = {
+  route: ['Режим работы', s => [{ id: 'auto' }, { id: 'dpi' }, { id: 'warp' }, { id: 'tor' }].map(x => ({ id: x.id, name: nameOf(s.routes, x.id), hint: routeHints[x.id] })), 'route'],
+  heavy: ['Если сайт заблокирован по IP', s => s.heavies, 'heavy'],
+  strat: ['Метод обхода DPI', s => [{ id: 'auto', name: 'Авто — подбирать для каждого сайта' }].concat(s.strategies), 'mode'],
+  doh: ['Шифрованный DNS', () => dohs, 'doh'],
+  bridges: ['Мосты Tor', s => s.bridges.map(b => Object.assign({}, b, { hint: b.id === 'auto' ? 'Сначала snowflake, при неудаче — obfs4 и meek; свои мосты — всегда' : b.id === 'custom' ? 'Только мосты из Telegram-бота @GetBridgesBot' : '' })), 'bridges'],
+  country: ['Страна IP через Tor', s => s.countries, 'tor_country'],
+};
+const titles = { custom: 'Свои мосты', test: 'Проверить сайт', sites: 'Подобранные сайты', port: 'Порт прокси', logs: 'Журнал' };
+
+function renderPage() {
+  if (!S || !page) return;
+  const s = S, st = s.settings, el = $('page');
+  if (radios[page]) {
+    const [title, items, key] = radios[page];
+    $('ptitle').textContent = title;
+    el.innerHTML = sec(title, items(s).map(x => row({ t: x.name, s: x.hint, sel: (st[key] || '') === x.id, a: 'set:' + key + ':' + x.id })));
+    return;
+  }
+  $('ptitle').textContent = titles[page] || 'Настройки';
+  if (page === 'root') {
+    const status = s.on ? [esc(s.summary)].concat((s.up_lines || []).map(esc)) : ['Выключено'];
+    const needTor = st.route === 'tor' || (st.route === 'auto' && st.heavy !== 'warp');
+    const country = st.tor_country ? nameOf(s.countries, st.tor_country) : 'Любая';
+    const learned = (s.learned || []).length + (s.blocked || []).length;
+    el.innerHTML =
+      `<div class="status"><b>${status[0]}</b>${status.slice(1).join('\n')}${(s.on ? s.up_warns || [] : []).map(w => '<div class="w">' + esc(w) + '</div>').join('')}</div>` +
+      sec('Подключение', [
+        row({ t: 'Режим работы', s: routeHints[st.route], v: shortRoute[st.route], nav: 1, a: 'go:route' }),
+        st.route === 'auto' ? row({ t: 'Если сайт заблокирован по IP', v: nameOf(s.heavies, st.heavy), nav: 1, a: 'go:heavy' }) : '',
+        row({ t: 'Метод обхода DPI', v: st.mode === 'auto' ? 'Авто' : nameOf(s.strategies, st.mode), nav: 1, a: 'go:strat' }),
+        row({ t: 'Шифрованный DNS', v: nameOf(dohs, st.doh).split(' ')[0], nav: 1, a: 'go:doh' }),
+      ]) +
+      (needTor || st.geo_tor ? sec('Tor', [
+        row({ t: 'Мосты Tor', v: nameOf(s.bridges, st.bridges), nav: 1, a: 'go:bridges' }),
+        row({ t: 'Свои мосты', v: bridgeCount(st.custom_bridges) || 'нет', nav: 1, a: 'go:custom' }),
+        row({ t: 'Страна IP через Tor', v: country, nav: 1, a: 'go:country' }),
+      ]) : '') +
+      sec('Правила', [
+        row({ t: 'Российские и казахстанские сайты — напрямую', s: 'С настоящим IP даже через Tor и WARP: банки, госуслуги, Яндекс, VK', toggle: st.keep_local, a: 'tg:keep_local' }),
+        row({ t: 'Spotify через Tor в России', s: 'Сервисы, закрытые для России, — через Tor даже в «Авто»', toggle: st.geo_tor, a: 'tg:geo_tor' }),
+      ]) +
+      sec('Инструменты', [
+        row({ t: 'Проверить сайт', nav: 1, a: 'go:test' }),
+        row({ t: 'Подобранные сайты', v: String(learned), nav: 1, a: 'go:sites' }),
+      ]) +
+      sec('Система', [
+        row({ t: 'Системный прокси', s: 'Браузеры и программы сами идут через Aristocrat NET', toggle: st.sys_proxy, a: 'tg:sys_proxy' }),
+        row({ t: 'Включать при запуске', toggle: st.auto_start, a: 'tg:auto_start' }),
+        row({ t: 'Порт прокси', v: String(st.port), nav: 1, a: 'go:port' }),
+      ]) +
+      sec('Другие', [
+        row({ t: 'Журнал', nav: 1, a: 'go:logs' }),
+        row({ t: 'О программе', v: 'v' + s.version, nav: 1, a: 'about' }),
+        row({ t: 'Выход из программы', danger: 1, a: 'quit' }),
+      ]);
+    return;
+  }
+  if (el.dataset.p === page) { if (page === 'sites') renderSites(); return; } // поля ввода не перерисовываем
+  el.dataset.p = page;
+  if (page === 'custom') el.innerHTML = `<div class="note">Мосты WebTunnel или obfs4 из Telegram-бота @GetBridgesBot, по одному в строке. Перед запуском программа проверит их и возьмёт самые быстрые.</div>
+      <textarea class="field" id="custom" rows="10" spellcheck="false"></textarea><div class="btns"><button class="btn" data-a="savecustom">Сохранить</button></div>`;
+  if (page === 'custom') $('custom').value = st.custom_bridges || '';
+  if (page === 'test') el.innerHTML = `<div class="note">Программа попробует открыть сайт всеми способами: напрямую, каждым методом обхода, через WARP и Tor.</div>
+      <input class="field" id="host" placeholder="например, youtube.com" spellcheck="false"><div class="btns"><button class="btn" id="test" data-a="test">${testing ? 'Проверяю…' : 'Проверить'}</button></div><div id="testOut">${testHtml}</div>`;
+  if (page === 'port') el.innerHTML = `<input class="field" id="port" type="number" min="1024" max="65535" value="${st.port}">
+      <div class="btns"><button class="btn" data-a="saveport">Сохранить</button></div><div class="note">Если «Системный прокси» выключен, укажите в браузере прокси 127.0.0.1 и этот порт (HTTP или SOCKS5).</div>`;
+  if (page === 'sites') { el.innerHTML = `<div class="btns"><button class="btn ghost" data-a="forgetall">Забыть все</button></div><div class="list" id="sites"></div>`; renderSites(); }
+  if (page === 'logs') { el.innerHTML = `<div class="btns"><button class="btn" data-a="copylog">Копировать</button><button class="btn ghost" data-a="clearlog">Очистить вид</button></div><pre class="log" id="logs"></pre>`; loadLogs(); }
+}
+
+function renderSites() {
+  const s = S; let h = '';
+  (s.blocked || []).forEach(b => h += `<div class="item"><div class="t"><div>${esc(b.host)}</div><div class="s">${esc(b.reason)}</div></div><span class="tag bad">не открылся</span><button class="x" data-h="${esc(b.host)}">✕</button></div>`);
+  (s.learned || []).forEach(l => h += `<div class="item"><div class="t"><div>${esc(l.host)}</div></div><span class="tag${l.strategy === 'tor' || l.strategy === 'warp' ? ' tor' : ''}">${esc(l.name)}</span><button class="x" data-h="${esc(l.host)}">✕</button></div>`);
+  $('sites').innerHTML = h || '<div class="note" style="padding:4px 12px">Здесь появятся сайты, для которых понадобился особый метод, WARP или Tor.</div>';
+}
+
+let logCleared = 0;
+async function loadLogs() {
+  const pre = $('logs'); if (!pre) return;
+  try {
+    const all = await api('logs'), lines = all.slice(logCleared > all.length ? 0 : logCleared);
+    const end = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+    pre.textContent = lines.join('\n'); if (end) pre.scrollTop = pre.scrollHeight;
+  } catch {}
+}
+
+function go(p) {
+  page = p; $('page').dataset.p = '';
+  $('home').classList.toggle('hidden', !!p); $('settings').classList.toggle('hidden', !p);
+  document.body.classList.toggle('home', !p);
+  window.scrollTo(0, 0);
+  if (p) renderPage();
+}
+function back() { if (!page) return; go(page === 'root' ? null : 'root'); }
+
+async function save(patch) {
+  try { render(await api('settings', Object.assign({}, S.settings, patch))); } catch (e) { toast(e.message); }
+}
+
+$('page').addEventListener('click', async e => {
+  const x = e.target.closest('.x'); if (x) { await api('forget', { host: x.dataset.h }).then(render); return; }
+  const t = e.target.closest('[data-a]'); if (!t) return;
+  const a = t.dataset.a, [cmd, k, v] = a.split(':');
+  if (cmd === 'go') go(k);
+  else if (cmd === 'set') { await save({ [k]: v }); go('root'); }
+  else if (cmd === 'tg') save({ [k]: !S.settings[k] });
+  else if (a === 'about') $('about').classList.remove('hidden');
+  else if (a === 'quit') {
+    if (!confirm('Выключить защиту и закрыть программу?')) return;
+    try { await api('quit', {}); } catch {}
+    clearInterval(timer);
+    document.body.innerHTML = '<section id="home"><div class="state">Программа закрыта</div><div class="sub">Системный прокси выключен. Окно можно закрыть.</div></section>';
+  }
+  else if (a === 'savecustom') { await save({ custom_bridges: $('custom').value }); toast('Мосты сохранены'); }
+  else if (a === 'saveport') { await save({ port: parseInt($('port').value, 10) || 8881 }); toast('Порт сохранён'); }
+  else if (a === 'forgetall') { await api('forget', { host: '' }).then(render); toast('Список очищен'); }
+  else if (a === 'copylog') {
+    const text = $('logs').textContent;
+    try { await navigator.clipboard.writeText(text); } catch { const r = document.createRange(); r.selectNodeContents($('logs')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); document.execCommand('copy'); sel.removeAllRanges(); }
+    toast('Журнал скопирован');
+  }
+  else if (a === 'clearlog') { logCleared = (await api('logs')).length; loadLogs(); }
+  else if (a === 'test') runTest();
+});
+$('page').addEventListener('keydown', e => { if (e.target.id === 'host' && e.key === 'Enter') runTest(); });
+
+async function runTest() {
+  const host = ($('host') || {}).value; if (!host || !host.trim() || testing) return;
+  testing = true; $('test').disabled = true; $('test').textContent = 'Проверяю…';
+  testHtml = '<div class="verdict">Пробую все методы, WARP и Tor — до минуты…</div>'; $('testOut').innerHTML = testHtml;
+  try {
+    const res = await api('test', { host: host.trim() });
+    const plain = res.find(r => r.strategy === 'none'), tor = res.find(r => r.strategy === 'tor'), warp = res.find(r => r.strategy === 'warp');
+    const dpiOk = res.filter(r => r.ok && r.strategy !== 'tor' && r.strategy !== 'warp');
+    let v;
+    if (plain && plain.ok) v = '✓ Сайт открывается и без обхода.';
+    else if (dpiOk.length) v = '✓ Блокировка по DPI — обходится. Лучший метод: <b>' + esc(dpiOk.sort((a, b) => a.ms - b.ms)[0].name) + '</b>.';
+    else if (warp && warp.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через WARP</b> — в режиме «Авто» это произойдёт само.';
+    else if (tor && tor.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через Tor</b> — в режиме «Авто» это произойдёт само.';
+    else v = '✗ Не открылся ни одним способом. Проверьте, подключены ли WARP и Tor.';
+    testHtml = '<div class="verdict">' + v + '</div><div class="list"><table>' + res.map(r =>
+      `<tr><td>${esc(r.name)}<div class="info">${esc(r.info)}</div></td><td class="r ${r.ok ? 'yes' : 'no'}">${r.ok ? '✓ ' + r.ms + ' мс' : '✗'}</td></tr>`).join('') + '</table></div>';
+  } catch (e) { testHtml = '<div class="verdict no">' + esc(e.message) + '</div>'; }
+  testing = false;
+  if ($('testOut')) { $('testOut').innerHTML = testHtml; $('test').disabled = false; $('test').textContent = 'Проверить'; }
+}
+
+function render(s) { S = s; renderHome(s); renderPage(); }
 
 async function loadIP() {
   $('ip').innerHTML = 'Ваш IP: <b>…</b>';
@@ -247,7 +353,6 @@ async function loadIP() {
     let flag = '';
     if (/^[A-Z]{2}$/.test(r.country || '')) {
       const cc = r.country.toLowerCase();
-      // Флаг картинкой (Windows не рисует флаги-эмодзи); если не загрузится — код страны.
       flag = `<img class="flag" src="https://flagcdn.com/24x18/${cc}.png" srcset="https://flagcdn.com/48x36/${cc}.png 2x" alt="${r.country}" title="${r.country}" onerror="this.replaceWith(document.createTextNode('${r.country}'))">`;
     }
     $('ip').innerHTML = flag + ' <b>' + esc(r.ip) + '</b>';
@@ -256,13 +361,7 @@ async function loadIP() {
 
 async function refresh() {
   try { render(await api('state')); } catch (e) { $('err').textContent = e.message; }
-  if (!$('settings').classList.contains('hidden') && $('logBox').open) try {
-    const pre = $('logs'), end = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
-    pre.textContent = (await api('logs')).join('\n'); if (end) pre.scrollTop = pre.scrollHeight;
-  } catch {}
-}
-async function save(patch) {
-  try { render(await api('settings', Object.assign({}, S.settings, patch))); } catch (e) { $('err').textContent = e.message; }
+  if (page === 'logs') loadLogs();
 }
 
 $('power').onclick = async () => {
@@ -270,56 +369,12 @@ $('power').onclick = async () => {
   busy = true; $('err').textContent = ''; if (S) render(S);
   try { busy = false; render(await api('toggle', {})); } catch (e) { busy = false; $('err').textContent = e.message; refresh(); }
 };
-$('gear').onclick = () => { $('home').classList.add('hidden'); $('settings').classList.remove('hidden'); window.scrollTo(0, 0); refresh(); };
-$('back').onclick = () => { $('settings').classList.add('hidden'); $('home').classList.remove('hidden'); };
+$('gear').onclick = () => go('root');
+$('back').onclick = back;
 $('aboutBtn').onclick = () => $('about').classList.remove('hidden');
 $('aboutClose').onclick = () => $('about').classList.add('hidden');
 $('about').onclick = e => { if (e.target.id === 'about') $('about').classList.add('hidden'); };
-document.onkeydown = e => { if (e.key === 'Escape') { $('about').classList.add('hidden'); if (!$('settings').classList.contains('hidden')) $('back').onclick(); } };
-
-$('route').onchange = e => save({ route: e.target.value });
-$('heavy').onchange = e => save({ heavy: e.target.value });
-$('mode').onchange = e => save({ mode: e.target.value });
-$('bridges').onchange = e => save({ bridges: e.target.value });
-$('country').onchange = e => save({ tor_country: e.target.value });
-$('saveCustom').onclick = () => save({ custom_bridges: $('custom').value });
-$('doh').onchange = e => save({ doh: e.target.value });
-$('sys').onchange = e => save({ sys_proxy: e.target.checked });
-$('keepLocal').onchange = e => save({ keep_local: e.target.checked });
-$('geoTor').onchange = e => save({ geo_tor: e.target.checked });
-$('auto').onchange = e => save({ auto_start: e.target.checked });
-$('port').onchange = e => save({ port: parseInt(e.target.value, 10) || 8881 });
-$('logBox').ontoggle = refresh;
-
-async function runTest() {
-  const host = $('host').value.trim(); if (!host) return;
-  const btn = $('test'), out = $('testOut');
-  btn.disabled = true; btn.textContent = 'Проверяю…';
-  out.innerHTML = '<div class="verdict">Пробую все методы, WARP и Tor, до минуты…</div>';
-  try {
-    const res = await api('test', { host });
-    const plain = res.find(r => r.strategy === 'none'), tor = res.find(r => r.strategy === 'tor'), warp = res.find(r => r.strategy === 'warp');
-    const dpiOk = res.filter(r => r.ok && r.strategy !== 'tor' && r.strategy !== 'warp');
-    let v;
-    if (plain && plain.ok) v = '✓ Сайт открывается и без обхода.';
-    else if (dpiOk.length) v = '✓ Блокировка по DPI — обходится. Лучший метод: <b>' + esc(dpiOk.sort((a, b) => a.ms - b.ms)[0].name) + '</b>.';
-    else if (warp && warp.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через WARP</b> — в режиме «Авто» это произойдёт само.';
-    else if (tor && tor.ok) v = '✓ Напрямую сайт недоступен, но открывается <b>через Tor</b> — в режиме «Авто» это произойдёт само.';
-    else v = '✗ Не открылся ни одним способом. Проверьте, подключены ли WARP и Tor (выше).';
-    out.innerHTML = '<div class="verdict">' + v + '</div><table>' + res.map(r =>
-      `<tr><td>${esc(r.name)}<div class="info">${esc(r.info)}</div></td><td class="r ${r.ok ? 'yes' : 'no'}">${r.ok ? '✓ ' + r.ms + ' мс' : '✗'}</td></tr>`).join('') + '</table>';
-  } catch (e) { out.innerHTML = '<div class="verdict no">' + esc(e.message) + '</div>'; }
-  btn.disabled = false; btn.textContent = 'Проверить';
-}
-$('test').onclick = runTest;
-$('host').onkeydown = e => { if (e.key === 'Enter') runTest(); };
-
-$('quit').onclick = async () => {
-  if (!confirm('Выключить обход и закрыть программу?')) return;
-  try { await api('quit', {}); } catch {}
-  clearInterval(timer);
-  document.body.innerHTML = '<section id="home"><div class="state">Программа закрыта</div><div class="sub">Системный прокси выключен. Окно можно закрыть.</div></section>';
-};
+document.onkeydown = e => { if (e.key === 'Escape') { if (!$('about').classList.contains('hidden')) $('about').classList.add('hidden'); else back(); } };
 
 refresh();
 const timer = setInterval(refresh, 1500);

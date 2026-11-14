@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:Theme.DeviceDefault">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+    <!-- Палитра Aristocrat NET -->
+    <color name="bg">#0A0F1F</color>
+    <color name="grad">#102542</color>
+    <color name="deep">#0B2D6B</color>
+    <color name="royal">#1E63D3</color>
+    <color name="card">#111A33</color>
+    <color name="line">#222E52</color>
+    <color name="accent">#4DA8FF</color>
+    <color name="light">#B7E0FF</color>
+    <color name="gold">#D4AF37</color>
+    <color name="gold_light">#F7E7B8</color>
+    <color name="muted">#7B8CA7</color>
+    <color name="text">#EEF3FB</color>
+    <color name="off">#2A2F45</color>
+</resources>

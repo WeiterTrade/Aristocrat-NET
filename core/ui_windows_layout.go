@@ -22,12 +22,20 @@ type frameLayout struct {
 	*walk.BoxLayout // нужен только ради неэкспортируемых методов интерфейса walk.Layout
 	container       walk.Container
 	title           func() win.HWND
+	fixed           func() map[win.HWND]walk.Rectangle // поля ввода настроек: точное место задаёт страница
 }
 
 // frameLayoutDecl — объявление для declarative (Layout: frameLayoutDecl{...}).
-type frameLayoutDecl struct{ title func() win.HWND }
+type frameLayoutDecl struct {
+	title func() win.HWND
+	fixed func() map[win.HWND]walk.Rectangle
+}
 
-func (d frameLayoutDecl) Create() (walk.Layout, error) { return newFrameLayout(d.title), nil }
+func (d frameLayoutDecl) Create() (walk.Layout, error) {
+	l := newFrameLayout(d.title)
+	l.fixed = d.fixed
+	return l, nil
+}
 
 func newFrameLayout(title func() win.HWND) *frameLayout {
 	l := &frameLayout{BoxLayout: walk.NewVBoxLayout(), title: title}
@@ -56,12 +64,17 @@ func (l *frameLayout) CreateLayoutItem(ctx *walk.LayoutContext) walk.ContainerLa
 	if l.title != nil {
 		h = l.title()
 	}
-	return &frameLayoutItem{title: h}
+	var fixed map[win.HWND]walk.Rectangle
+	if l.fixed != nil {
+		fixed = l.fixed()
+	}
+	return &frameLayoutItem{title: h, fixed: fixed}
 }
 
 type frameLayoutItem struct {
 	walk.ContainerLayoutItemBase
 	title win.HWND
+	fixed map[win.HWND]walk.Rectangle
 }
 
 func (li *frameLayoutItem) dpi() int {
@@ -95,7 +108,9 @@ func (li *frameLayoutItem) PerformLayout() []walk.LayoutResultItem {
 			continue
 		}
 		var r walk.Rectangle
-		if it.Handle() == li.title {
+		if fr, ok := li.fixed[it.Handle()]; ok {
+			r = fr
+		} else if it.Handle() == li.title {
 			r = walk.Rectangle{X: 0, Y: 0, Width: cs.Width, Height: th}
 		} else {
 			r = walk.Rectangle{X: border, Y: th, Width: cs.Width - 2*border, Height: cs.Height - th - border}

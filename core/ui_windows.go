@@ -43,30 +43,41 @@ func init() {
 }
 
 // ---------------------------------------------------------------------------
-// Палитра «Земля и небо»: глубокий синий, небесно-голубой, зелень Земли.
+// Палитра Aristocrat NET: глубокий синий, королевский синий, небесный, золото.
 
 type rgb struct{ r, g, b uint8 }
 
 var (
-	cNavy      = rgb{0x0E, 0x2D, 0x4A} // заголовок, рамка
-	cNavyHover = rgb{0x1D, 0x46, 0x6E}
+	cBg        = rgb{0x0A, 0x0F, 0x1F} // фон
+	cBgGrad    = rgb{0x10, 0x25, 0x42}
+	cDeep      = rgb{0x0B, 0x2D, 0x6B} // глубокий синий
+	cRoyal     = rgb{0x1E, 0x63, 0xD3} // королевский синий
+	cSky       = rgb{0x4D, 0xA8, 0xFF} // небесный
+	cLight     = rgb{0xB7, 0xE0, 0xFF} // светло-синий
+	cGold      = rgb{0xD4, 0xAF, 0x37}
+	cGoldLight = rgb{0xF7, 0xE7, 0xB8}
+	cTurq      = rgb{0x00, 0xE5, 0xFF}
+	cAccent    = rgb{0x00, 0x86, 0xFF}
+	cSteel     = rgb{0x7B, 0x8C, 0xA7}
+	cDarkGray  = rgb{0x2A, 0x2F, 0x45}
+	cCard      = rgb{0x11, 0x1A, 0x33} // карточки и поля
+	cCardHover = rgb{0x18, 0x26, 0x4A}
+	cLine      = rgb{0x22, 0x2E, 0x52} // разделители, рамки
+	cDanger    = rgb{0xFF, 0x6B, 0x6B}
+
+	cNavy      = cBg // заголовок, рамка окна
+	cNavyHover = rgb{0x16, 0x21, 0x3D}
 	cCloseHov  = rgb{0xC4, 0x2B, 0x1C}
-	cBgTop     = rgb{0xE6, 0xF0, 0xF7} // небо
-	cBgBottom  = rgb{0xF8, 0xFB, 0xFD}
-	cText      = rgb{0x14, 0x27, 0x3A}
-	cMuted     = rgb{0x5E, 0x72, 0x86}
-	cLink      = rgb{0x1F, 0x5F, 0x99}
-	cWarn      = rgb{0xB4, 0x3C, 0x0C}
-	cOk        = rgb{0x15, 0x8A, 0x63}
+	cText      = rgb{0xEE, 0xF3, 0xFB}
+	cMuted     = cSteel
 	cWhite     = rgb{0xFF, 0xFF, 0xFF}
-	cPillLine  = rgb{0xD3, 0xDF, 0xE9}
-	// небо с лучами (центр → край)
-	cSkyCenter = rgb{0x7C, 0xCF, 0xF4}
-	cSkyEdge   = rgb{0x12, 0x5A, 0xA8}
-	cOnSky     = rgb{0xFF, 0xFF, 0xFF} // основной текст на небе
-	cOnSkySub  = rgb{0xDD, 0xEE, 0xFB} // второстепенный текст на небе
-	cOnSkyWarn = rgb{0xFF, 0xE0, 0xB8} // предупреждения на небе
-	cOnSkyOk   = rgb{0xC8, 0xFF, 0xD8}
+	cPillLine  = cGold
+	cSkyCenter = cDeep // фон главного экрана: от центра к краю
+	cSkyEdge   = cBg
+	cOnSky     = rgb{0xFF, 0xFF, 0xFF}
+	cOnSkySub  = cLight
+	cOnSkyWarn = cGoldLight
+	cOnSkyOk   = cGoldLight
 )
 
 func (c rgb) walk() walk.Color        { return walk.RGB(c.r, c.g, c.b) }
@@ -196,9 +207,12 @@ func sky(img *image.RGBA, cx, cy float64) {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			dx, dy := float64(x)+0.5-cx, float64(y)+0.5-cy
 			r := math.Hypot(dx, dy) / maxd
-			col := lerp(cSkyCenter, cSkyEdge, r)
-			ray := math.Pow(math.Max(0, math.Cos(math.Atan2(dy, dx)*18)), 6) * 0.11 * math.Max(0, 1-r*0.85)
-			col = lerp(col, cWhite, ray)
+			col := lerp(cSkyCenter, cSkyEdge, math.Sqrt(clamp01(r)))
+			ray := math.Pow(math.Max(0, math.Cos(math.Atan2(dy, dx)*18)), 8) * 0.22 * math.Max(0, 1-r*1.1)
+			col = lerp(col, cSky, ray)
+			if h := hash2(x*7+3, y*13+5); h > 0.9993 { // звёзды
+				col = lerp(col, cLight, 0.5)
+			}
 			i := img.PixOffset(x, y)
 			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = col.r, col.g, col.b, 255
 		}
@@ -223,9 +237,13 @@ func planet(img *image.RGBA, r walk.Rectangle, halo int, vivid, busy bool) {
 			}
 			fx, fy := float64(x)+0.5-cx, float64(y)+0.5-cy
 			d := math.Hypot(fx, fy)
-			if d > R-1 && d < outer { // мягкое сияние вокруг планеты
+			if d > R-1 && d < outer { // голубое сияние вокруг планеты
 				t := (d - R) / float64(halo)
-				fillPx(img, x, y, cWhite, 0.32*math.Pow(1-clamp01(t), 2))
+				gc, ga := cSky, 0.55
+				if !vivid {
+					gc, ga = cSteel, 0.25
+				}
+				fillPx(img, x, y, gc, ga*math.Pow(1-clamp01(t), 2))
 			}
 			cov := clamp01(R - d + 0.5)
 			if cov <= 0 {
@@ -234,23 +252,30 @@ func planet(img *image.RGBA, r walk.Rectangle, halo int, vivid, busy bool) {
 			nx, ny := fx/R, fy/R
 			nd := math.Min(1, d/R)
 			light := clamp01(0.55 - 0.45*(nx*0.6+ny*0.75) + 0.25*(1-nd*nd))
-			col := rgb{uint8(40 + 70*light), uint8(120 + 80*light), uint8(190 + 55*light)}
+			col := lerp(cDeep, cRoyal, light)
 			k := 1 / (math.Sqrt(math.Max(0.05, 1-nd*nd)) + 1.2) * 1.6
 			if n := fbm(nx*k*2.0+5.3, ny*k*2.0+1.9); n > 0.45 {
-				land := rgb{uint8(56 + 60*light), uint8(150 + 60*light), uint8(110 + 40*light)}
-				col = lerp(col, land, math.Min(1, (n-0.45)*7*1.6))
+				land := lerp(cSky, cLight, light*0.8)
+				col = lerp(col, land, math.Min(1, (n-0.45)*7*1.6)*0.85)
+				if n > 0.55 && light < 0.6 && hash2(x, y) > 0.985 { // огни городов
+					col = lerp(col, cGoldLight, 0.7)
+				}
 			}
 			if !vivid {
 				g := (int(col.r) + int(col.g) + int(col.b)) / 3
-				gray := rgb{uint8(g), uint8(g), uint8(g + (255-g)/8)}
-				col = lerp(col, gray, 0.62)
+				gray := rgb{uint8(g), uint8(g), uint8(math.Min(255, float64(g+18)))}
+				col = lerp(lerp(col, gray, 0.65), rgb{}, 0.25)
 			}
 			if busy {
-				col = lerp(col, rgb{0x3A, 0x8E, 0xD8}, 0.35)
+				col = lerp(col, cAccent, 0.3)
 			}
-			// светлая атмосферная кайма
+			// атмосферная кайма
 			rim := clamp01(1 - math.Abs(R-1.5-d)/1.5)
-			col = lerp(col, cWhite, rim*0.45)
+			rc := rgb{160, 215, 255}
+			if !vivid {
+				rc = rgb{150, 160, 175}
+			}
+			col = lerp(col, rc, rim*0.55)
 			fillPx(img, x, y, col, cov)
 		}
 	}
@@ -327,7 +352,7 @@ type nativeUI struct {
 	mw        *walk.MainWindow
 	title     *walk.CustomWidget
 	home      *walk.CustomWidget
-	settings  *walk.ScrollView
+	setPane   *walk.CustomWidget // настройки: страницы рисуются сами (как в мобильных приложениях)
 	ni        *walk.NotifyIcon
 	toggleAct *walk.Action
 	txt       gdiText
@@ -350,20 +375,42 @@ type nativeUI struct {
 	scene    *walk.Bitmap
 	sceneKey sceneKey
 	logoImg  image.Image
+	brandImg image.Image
 	logoBmp  map[string]*walk.Bitmap
 	flagBmp  *walk.Bitmap
 
 	// области щелчков (пиксели)
 	rBtn, rGear, rAbout, rPill walk.Rectangle
 
-	refreshSettings func()
-	settingsReady   func()
+	// Настройки: текущая страница, прокрутка, подсветка, поля ввода.
+	page      string
+	scroll    int
+	setHover  int
+	setItems  []*sItem
+	natives   map[win.HWND]walk.Rectangle // где сейчас стоят поля ввода
+	teBridges *walk.TextEdit
+	leHost    *walk.LineEdit
+	teResult  *walk.TextEdit
+	lePort    *walk.LineEdit
+	teLog     *walk.TextEdit
+	teSites   *walk.TextEdit
+	testing   bool
+	contentH  int
+	lastPaneW int
+	lastPaneH int
+
+	aboutFromSettings bool
+	toast             string
+	toastAt           time.Time
 }
 
 func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct{}) {
 	u := &nativeUI{a: a, quit: quit, view: viewHome, txt: gdiText{fonts: map[fontKey]win.HFONT{}}, logoBmp: map[string]*walk.Bitmap{}}
 	if img, _, err := image.Decode(bytes.NewReader(logoPNG)); err == nil {
 		u.logoImg = img
+	}
+	if img, _, err := image.Decode(bytes.NewReader(brandPNG)); err == nil {
+		u.brandImg = img
 	}
 	if err := u.build(); err != nil {
 		// Если нативное окно не создалось — откатываемся на окно в браузере.
@@ -406,11 +453,11 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 
 func (u *nativeUI) build() error {
 	icon, _ := walk.NewIconFromResourceId(1)
-	settingsChildren := u.settingsWidgets()
+	u.natives = map[win.HWND]walk.Rectangle{}
 
 	if err := (dcl.MainWindow{
 		AssignTo:   &u.mw,
-		Title:      "Обход",
+		Title:      appTitle,
 		Icon:       icon,
 		Size:       dcl.Size{Width: 440, Height: 660},
 		Background: dcl.SolidColorBrush{Color: cNavy.walk()}, // это цвет рамки окна (1 пиксель)
@@ -420,6 +467,12 @@ func (u *nativeUI) build() error {
 				return 0
 			}
 			return u.title.Handle()
+		}, fixed: func() map[win.HWND]walk.Rectangle {
+			out := make(map[win.HWND]walk.Rectangle, len(u.natives))
+			for h, r := range u.natives {
+				out[h] = r
+			}
+			return out
 		}},
 		Children: []dcl.Widget{
 			dcl.CustomWidget{
@@ -446,14 +499,31 @@ func (u *nativeUI) build() error {
 					}
 				},
 			},
-			dcl.ScrollView{
-				AssignTo:        &u.settings,
-				Visible:         false,
-				HorizontalFixed: true,
-				Background:      dcl.SolidColorBrush{Color: cBgBottom.walk()},
-				Layout:          dcl.VBox{Margins: dcl.Margins{Left: 14, Top: 10, Right: 14, Bottom: 14}},
-				Children:        settingsChildren,
+			dcl.CustomWidget{
+				AssignTo:            &u.setPane,
+				Visible:             false,
+				PaintPixels:         u.paintSettings,
+				InvalidatesOnResize: true,
+				DoubleBuffering:     true,
+				OnMouseDown:         u.settingsDown,
+				OnMouseMove:         u.settingsMove,
+				OnKeyDown: func(key walk.Key) {
+					if key == walk.KeyEscape {
+						u.goBack()
+					}
+				},
 			},
+			dcl.TextEdit{AssignTo: &u.teBridges, Visible: false, VScroll: true, Font: dcl.Font{Family: "Consolas", PointSize: 9}},
+			dcl.LineEdit{AssignTo: &u.leHost, Visible: false, CueBanner: "например, youtube.com", Font: dcl.Font{Family: "Segoe UI", PointSize: 11},
+				OnKeyDown: func(k walk.Key) {
+					if k == walk.KeyReturn {
+						u.runTest()
+					}
+				}},
+			dcl.TextEdit{AssignTo: &u.teResult, Visible: false, ReadOnly: true, VScroll: true, Font: dcl.Font{Family: "Segoe UI", PointSize: 9}},
+			dcl.LineEdit{AssignTo: &u.lePort, Visible: false, Font: dcl.Font{Family: "Segoe UI", PointSize: 11}},
+			dcl.TextEdit{AssignTo: &u.teLog, Visible: false, ReadOnly: true, VScroll: true, Font: dcl.Font{Family: "Consolas", PointSize: 8}},
+			dcl.TextEdit{AssignTo: &u.teSites, Visible: false, ReadOnly: true, VScroll: true, Font: dcl.Font{Family: "Segoe UI", PointSize: 9}},
 		},
 	}.Create()); err != nil {
 		return err
@@ -461,7 +531,10 @@ func (u *nativeUI) build() error {
 	if icon != nil {
 		_ = u.mw.SetIcon(icon)
 	}
-	u.settingsReady()
+	u.styleNatives()
+	u.setPane.MouseWheel().Attach(func(x, y int, b walk.MouseButton) {
+		u.scrollBy(-int(int16(uint32(b)>>16)) * int(48*u.dpiScale()) / 120)
+	})
 
 	// Закрытие окна (Alt+F4, кнопка ✕) — сворачивание в трей.
 	u.mw.Closing().Attach(func(canceled *bool, reason walk.CloseReason) {
@@ -484,7 +557,7 @@ func (u *nativeUI) build() error {
 	if icon != nil {
 		_ = ni.SetIcon(icon)
 	}
-	_ = ni.SetToolTip("Обход")
+	_ = ni.SetToolTip(appTitle)
 	ni.MouseDown().Attach(func(x, y int, button walk.MouseButton) {
 		if button == walk.LeftButton {
 			u.showWindow()
@@ -497,7 +570,7 @@ func (u *nativeUI) build() error {
 		_ = ni.ContextMenu().Actions().Add(act)
 		return act
 	}
-	add("Открыть «Обход»", u.showWindow)
+	add("Открыть "+appTitle, u.showWindow)
 	u.toggleAct = add("Включить обход", u.toggle)
 	_ = ni.ContextMenu().Actions().Add(walk.NewSeparatorAction())
 	add("Настройки", func() { u.showWindow(); u.setView(viewSettings) })
@@ -588,22 +661,25 @@ func (u *nativeUI) hideToTray() {
 	u.toldTray = true
 	u.mu.Unlock()
 	if tell {
-		_ = u.ni.ShowInfo("«Обход» продолжает работать", "Окно свёрнуто в трей. Щёлкните по значку, чтобы открыть его снова.")
+		_ = u.ni.ShowInfo(appTitle+" продолжает работать", "Окно свёрнуто в трей. Щёлкните по значку, чтобы открыть его снова.")
 	}
 }
 
 func (u *nativeUI) setView(v string) {
 	u.view = v
 	settings := v == viewSettings
-	u.settings.SetVisible(settings)
-	u.home.SetVisible(!settings)
-	if settings && u.refreshSettings != nil {
-		u.refreshSettings()
+	if settings {
+		u.page, u.scroll = "root", 0
 	}
+	u.setPane.SetVisible(settings)
+	u.home.SetVisible(!settings)
+	u.showPage()
 	u.title.Invalidate()
 	u.home.Invalidate()
 	if !settings {
 		_ = u.home.SetFocus()
+	} else {
+		_ = u.setPane.SetFocus()
 	}
 }
 
@@ -691,20 +767,30 @@ func (u *nativeUI) paintTitle(c *walk.Canvas, _ walk.Rectangle) error {
 	}
 
 	x := int(12 * s)
-	title := "Обход"
+	fTitle := u.txt.font("Segoe UI Semibold", int(14*s), false)
 	if u.view != viewHome {
-		u.txt.draw(hdc, "←", u.txt.font("Segoe UI", int(18*s), false), cWhite, back, dtCenter|dtVCenter|dtSingle)
+		u.txt.draw(hdc, "←", u.txt.font("Segoe UI", int(18*s), false), cGoldLight, back, dtCenter|dtVCenter|dtSingle)
 		x = back.Width + int(4*s)
-		title = map[string]string{viewSettings: "Настройки", viewAbout: "О программе"}[u.view]
+		title := "О программе"
+		if u.view == viewSettings {
+			title = u.pageTitle()
+		}
+		u.txt.draw(hdc, title, fTitle, cText,
+			walk.Rectangle{X: x, Y: 0, Width: min.X - x, Height: b.Height}, dtLeft|dtVCenter|dtSingle)
 	} else {
-		lp := int(22 * s)
+		lp := int(24 * s)
 		if bmp := u.logoBitmap(lp, cNavy); bmp != nil {
 			_ = c.DrawImagePixels(bmp, walk.Point{X: x, Y: (b.Height - lp) / 2})
 		}
 		x += lp + int(9*s)
+		w1, _ := u.txt.measure(hdc, "Aristocrat ", fTitle)
+		u.txt.draw(hdc, "Aristocrat ", fTitle, cGold, walk.Rectangle{X: x, Y: 0, Width: w1 + 2, Height: b.Height}, dtLeft|dtVCenter|dtSingle)
+		u.txt.draw(hdc, "NET", fTitle, cLight, walk.Rectangle{X: x + w1, Y: 0, Width: min.X - x - w1, Height: b.Height}, dtLeft|dtVCenter|dtSingle)
 	}
-	u.txt.draw(hdc, title, u.txt.font("Segoe UI Semibold", int(14*s), false), cWhite,
-		walk.Rectangle{X: x, Y: 0, Width: min.X - x, Height: b.Height}, dtLeft|dtVCenter|dtSingle)
+	// тонкая золотая линия под заголовком
+	gl, _ := walk.NewSolidColorBrush(cLine.walk())
+	_ = c.FillRectanglePixels(gl, walk.Rectangle{X: 0, Y: b.Height - 1, Width: b.Width, Height: 1})
+	gl.Dispose()
 
 	// значки кнопок окна
 	pen, _ := walk.NewCosmeticPen(walk.PenSolid, cWhite.walk())
@@ -768,7 +854,7 @@ func (u *nativeUI) titleDown(x, y int, button walk.MouseButton) {
 	case 3:
 		u.hideToTray()
 	case 4:
-		u.setView(viewHome)
+		u.goBack()
 	default:
 		// двойной щелчок по заголовку — развернуть/восстановить
 		if time.Since(u.lastDown) < 400*time.Millisecond {
@@ -854,14 +940,14 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 		if u.view == viewHome {
 			sky(img, float64(u.rBtn.X+u.rBtn.Width/2), float64(u.rBtn.Y+u.rBtn.Height/2))
 			planet(img, u.rBtn, int(16*s), state != "off", state == "busy")
-			roundRect(img, u.rPill, float64(pillH)/2, cWhite, cPillLine)
-			circleShape(img, u.rGear, cWhite, cPillLine)
+			roundRect(img, u.rPill, float64(pillH)/2, cCard, cPillLine)
+			circleShape(img, u.rGear, cCard, cLine)
 		} else {
-			lp := int(150 * s)
-			ly := int(28 * s)
+			lp := int(210 * s)
+			ly := int(16 * s)
 			sky(img, float64(b.Width)/2, float64(ly+lp/2))
-			if u.logoImg != nil {
-				logo := scaleRGBA(u.logoImg, lp)
+			if u.brandImg != nil {
+				logo := scaleRGBA(u.brandImg, lp)
 				x0 := (b.Width - lp) / 2
 				draw.Draw(img, image.Rect(x0, ly, x0+lp, ly+lp), logo, image.Point{}, draw.Over)
 			}
@@ -895,7 +981,7 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	fBtn := u.txt.font("Segoe UI Semibold", int(23*s), false)
 	sh := u.rBtn
 	sh.X, sh.Y = sh.X+int(math.Max(1, s)), sh.Y+int(math.Max(1, 2*s))
-	u.txt.draw(hdc, label, fBtn, rgb{0x0B, 0x33, 0x5C}, sh, dtCenter|dtVCenter|dtSingle)
+	u.txt.draw(hdc, label, fBtn, cBg, sh, dtCenter|dtVCenter|dtSingle)
 	u.txt.draw(hdc, label, fBtn, cWhite, u.rBtn, dtCenter|dtVCenter|dtSingle)
 
 	// Состояние
@@ -941,26 +1027,24 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	}
 
 	// Шестерёнка
-	u.txt.draw(hdc, "⚙", u.txt.font("Segoe UI Symbol", int(23*s), false), cMuted, u.rGear, dtCenter|dtVCenter|dtSingle)
+	u.txt.draw(hdc, "⚙", u.txt.font("Segoe UI Symbol", int(23*s), false), cLight, u.rGear, dtCenter|dtVCenter|dtSingle)
 	u.txt.draw(hdc, "v"+appVersion, u.txt.font("Segoe UI", int(11*s), false), cOnSkySub,
 		walk.Rectangle{X: 0, Y: u.rGear.Y, Width: b.Width - int(16*s), Height: u.rGear.Height}, dtRight|dtVCenter|dtSingle)
 	return nil
 }
 
 func (u *nativeUI) paintAbout(c *walk.Canvas, hdc win.HDC, b walk.Rectangle, s float64) {
-	y := int(28*s) + int(150*s) + int(10*s)
-	u.txt.draw(hdc, "Обход", u.txt.font("Segoe UI Semibold", int(26*s), false), cOnSky,
-		walk.Rectangle{Y: y, Width: b.Width, Height: int(34 * s)}, dtCenter|dtSingle)
-	y += int(34 * s)
-	u.txt.draw(hdc, "версия "+appVersion, u.txt.font("Segoe UI", int(13*s), false), cOnSkySub,
+	y := int(16*s) + int(210*s) + int(8*s)
+	u.txt.draw(hdc, "версия "+appVersion, u.txt.font("Segoe UI", int(13*s), false), cGoldLight,
 		walk.Rectangle{Y: y, Width: b.Width, Height: int(20 * s)}, dtCenter|dtSingle)
-	y += int(32 * s)
+	y += int(30 * s)
 	text := "Шифрует DNS и обходит блокировки провайдера прямо на компьютере — без VPN-подписок и своих серверов.\n\n" +
 		"Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) " +
 		"не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через " +
-		"бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor.\n\n" +
+		"бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor. " +
+		"Российские и казахстанские сайты всегда открываются с вашим настоящим IP.\n\n" +
 		"Используются: wireguard-go, gVisor, Tor и lyrebird. Лицензия MIT."
-	u.txt.draw(hdc, text, u.txt.font("Segoe UI", int(13*s), false), cOnSky,
+	u.txt.draw(hdc, text, u.txt.font("Segoe UI", int(13*s), false), cText,
 		walk.Rectangle{X: int(30 * s), Y: y, Width: b.Width - int(60*s), Height: b.Height - y - int(16*s)}, dtCenter|dtWord)
 }
 
@@ -1034,16 +1118,19 @@ func (u *nativeUI) ticker(done <-chan struct{}) {
 					u.title.Invalidate()
 				}
 			}
+			if u.view == viewSettings {
+				u.refreshPage()
+			}
 			if !changed {
 				return
 			}
 			u.home.Invalidate()
 			if on {
 				_ = u.toggleAct.SetText("Выключить обход")
-				_ = u.ni.SetToolTip("Обход — шифрование включено")
+				_ = u.ni.SetToolTip(appTitle + " — шифрование включено")
 			} else {
 				_ = u.toggleAct.SetText("Включить обход")
-				_ = u.ni.SetToolTip("Обход — выключен")
+				_ = u.ni.SetToolTip(appTitle + " — выключено")
 			}
 		})
 	}
@@ -1144,290 +1231,4 @@ func indexOf(list []string, v string) int {
 		}
 	}
 	return 0
-}
-
-func (u *nativeUI) settingsWidgets() []dcl.Widget {
-	st := u.a.settings()
-	routeIDs := []string{RouteAuto, RouteDPI, RouteWarp, RouteTor}
-	routeNames := []string{RouteNames[RouteAuto], RouteNames[RouteDPI], RouteNames[RouteWarp], RouteNames[RouteTor]}
-	countryNames := make([]string, len(torCountryOrder))
-	for i, c := range torCountryOrder {
-		countryNames[i] = TorCountries[c]
-	}
-	heavyNames := make([]string, len(heavyOrder))
-	for i, h := range heavyOrder {
-		heavyNames[i] = HeavyNames[h]
-	}
-	stratIDs := append([]string{"auto"}, AutoOrder...)
-	stratNames := []string{"Авто"}
-	for _, s := range AutoOrder {
-		stratNames = append(stratNames, StratNames[s])
-	}
-	bridgeNames := make([]string, len(bridgeOrder))
-	for i, b := range bridgeOrder {
-		bridgeNames[i] = BridgeNames[b]
-	}
-	dohIDs := []string{"cloudflare", "google", "quad9"}
-	dohNames := []string{"Cloudflare", "Google", "Quad9"}
-
-	var (
-		cbRoute, cbStrat, cbBridges, cbDoH *walk.ComboBox
-		cbHeavy, cbCountry                 *walk.ComboBox
-		teCustom, teTest, teSites, teLog   *walk.TextEdit
-		btnTest                            *walk.PushButton
-		leHost                             *walk.LineEdit
-		chkSys, chkAuto                    *walk.CheckBox
-		chkLocal, chkGeoTor                *walk.CheckBox
-		nePort                             *walk.NumberEdit
-		lblTor                             *walk.Label
-		ready                              bool
-	)
-
-	apply := func() {
-		if !ready {
-			return
-		}
-		s := u.a.settings()
-		s.Route = routeIDs[cbRoute.CurrentIndex()]
-		s.Heavy = heavyOrder[cbHeavy.CurrentIndex()]
-		s.TorCountry = torCountryOrder[cbCountry.CurrentIndex()]
-		s.Mode = stratIDs[cbStrat.CurrentIndex()]
-		s.Bridges = bridgeOrder[cbBridges.CurrentIndex()]
-		s.DoH = dohIDs[cbDoH.CurrentIndex()]
-		s.SysProxy = chkSys.Checked()
-		s.AutoStart = chkAuto.Checked()
-		s.KeepLocal = chkLocal.Checked()
-		s.GeoTor = chkGeoTor.Checked()
-		s.Port = int(nePort.Value())
-		_, needTor := s.needs()
-		cbBridges.SetEnabled(needTor)
-		cbCountry.SetEnabled(needTor)
-		cbHeavy.SetEnabled(s.Route == RouteAuto)
-		go func() {
-			if err := u.a.applySettings(s); err != nil {
-				u.mw.Synchronize(func() { walk.MsgBox(u.mw, "Настройки", err.Error(), walk.MsgBoxIconWarning) })
-			}
-		}()
-	}
-
-	sites := func() string {
-		var lines []string
-		for h, r := range u.a.eng.Blocked() {
-			lines = append(lines, "✗ "+h+" — "+r)
-		}
-		for h, s := range u.a.eng.Learned() {
-			lines = append(lines, "✓ "+h+" — "+StratNames[s])
-		}
-		if len(lines) == 0 {
-			return "Здесь появятся сайты, для которых понадобился особый метод, WARP или Tor."
-		}
-		return strings.Join(lines, "\r\n")
-	}
-
-	runTest := func() {
-		host := strings.TrimSpace(leHost.Text())
-		if host == "" {
-			return
-		}
-		btnTest.SetEnabled(false)
-		_ = teTest.SetText("Пробую все методы, WARP и Tor, до минуты…")
-		go func() {
-			res, err := u.a.eng.TestHost(host, false)
-			var out string
-			if err != nil {
-				out = err.Error()
-			} else {
-				var lines []string
-				for _, r := range res {
-					mark := "✗"
-					if r.OK {
-						mark = fmt.Sprintf("✓ %d мс", r.Ms)
-					}
-					lines = append(lines, fmt.Sprintf("%s: %s  %s", r.Name, mark, r.Info))
-				}
-				out = strings.Join(lines, "\r\n")
-			}
-			u.mw.Synchronize(func() {
-				_ = teTest.SetText(out)
-				btnTest.SetEnabled(true)
-			})
-		}()
-	}
-
-	// Обработчики изменений включаются после создания окна (иначе сработали бы при начальной установке значений).
-	u.settingsReady = func() {
-		ready = true
-		// Колёсико мыши над списком или полем порта не должно менять настройку, пока по нему
-		// не щёлкнули: иначе при прокрутке настроек незаметно менялись порт и маршрут.
-		_ = nePort.SetIncrement(0)
-		for _, cb := range []*walk.ComboBox{cbRoute, cbStrat, cbBridges, cbDoH, cbHeavy, cbCountry} {
-			wheelOnlyWhenFocused(cb.Handle(), u.settings.Handle())
-		}
-	}
-
-	// Обновление журнала, сайтов и состояния Tor, пока открыты настройки.
-	u.refreshSettings = func() {
-		if !ready {
-			return
-		}
-		u.a.mu.Lock()
-		logs := strings.Join(u.a.logs, "\r\n")
-		u.a.mu.Unlock()
-		if teLog.Text() != logs {
-			_ = teLog.SetText(logs)
-			teLog.SendMessage(win.EM_LINESCROLL, 0, 100000)
-		}
-		if sx := sites(); teSites.Text() != sx {
-			_ = teSites.SetText(sx)
-		}
-		ul, uw := u.a.upstreamLines()
-		t := strings.Join(append(ul, uw...), "\n")
-		if ep := u.a.warp.Endpoint(); ep != "" && strings.Contains(t, "WARP подключён") {
-			t = strings.Replace(t, "WARP подключён", "WARP подключён (узел "+ep+")", 1)
-		}
-		_ = lblTor.SetText(t)
-	}
-	go func() {
-		for range time.Tick(time.Second) {
-			if u.mw != nil && u.view == viewSettings {
-				u.mw.Synchronize(u.refreshSettings)
-			}
-		}
-	}()
-
-	groupFont := dcl.Font{Family: "Segoe UI", PointSize: 9, Bold: true}
-	return []dcl.Widget{
-		dcl.GroupBox{
-			Title: "Подключение", Font: groupFont,
-			Layout: dcl.Grid{Columns: 2},
-			Children: []dcl.Widget{
-				dcl.Label{Text: "Маршрут:"},
-				dcl.ComboBox{AssignTo: &cbRoute, Model: routeNames, CurrentIndex: indexOf(routeIDs, st.Route), OnCurrentIndexChanged: apply},
-				dcl.Label{Text: "Метод обхода DPI:"},
-				dcl.ComboBox{AssignTo: &cbStrat, Model: stratNames, CurrentIndex: indexOf(stratIDs, st.Mode), OnCurrentIndexChanged: apply},
-				dcl.Label{Text: "Если сайт заблокирован по IP:"},
-				dcl.ComboBox{AssignTo: &cbHeavy, Model: heavyNames, CurrentIndex: indexOf(heavyOrder, st.Heavy), OnCurrentIndexChanged: apply,
-					Enabled: st.Route == RouteAuto},
-				dcl.Label{ColumnSpan: 2, Text: "WARP — бесплатный зашифрованный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш.", TextColor: cMuted.walk()},
-				dcl.Label{Text: "Мосты Tor:"},
-				dcl.ComboBox{AssignTo: &cbBridges, Model: bridgeNames, CurrentIndex: indexOf(bridgeOrder, st.Bridges), OnCurrentIndexChanged: apply,
-					Enabled: func() bool { _, t := st.needs(); return t }()},
-				dcl.Label{Text: "Страна IP через Tor:"},
-				dcl.ComboBox{AssignTo: &cbCountry, Model: countryNames, CurrentIndex: indexOf(torCountryOrder, st.TorCountry), OnCurrentIndexChanged: apply,
-					Enabled: func() bool { _, t := st.needs(); return t }()},
-				dcl.Label{ColumnSpan: 2, Text: "Сайты увидят IP из выбранной страны. Нужен режим «Всё через Tor» (в режиме «Авто» — только для сайтов, открытых через Tor). WARP страну не меняет.", TextColor: cMuted.walk()},
-				dcl.Label{ColumnSpan: 2, Text: "Свои мосты (WebTunnel / obfs4 из Telegram-бота @GetBridgesBot), по одному в строке.\nИспользуются в режимах «Свои мосты» и «Автовыбор»:", TextColor: cMuted.walk()},
-				dcl.TextEdit{AssignTo: &teCustom, ColumnSpan: 2, MinSize: dcl.Size{Height: 64}, VScroll: true,
-					Text: strings.ReplaceAll(st.CustomBridges, "\n", "\r\n"), Font: dcl.Font{Family: "Consolas", PointSize: 8}},
-				dcl.PushButton{ColumnSpan: 2, Text: "Сохранить свои мосты", OnClicked: func() {
-					s := u.a.settings()
-					s.CustomBridges = strings.ReplaceAll(teCustom.Text(), "\r\n", "\n")
-					go func() { _ = u.a.applySettings(s) }()
-				}},
-				dcl.CheckBox{AssignTo: &chkLocal, ColumnSpan: 2, Checked: st.KeepLocal, OnCheckedChanged: apply,
-					Text: "Российские и казахстанские сайты — напрямую, с настоящим IP (банки, госуслуги, Яндекс, VK…)"},
-				dcl.CheckBox{AssignTo: &chkGeoTor, ColumnSpan: 2, Checked: st.GeoTor, OnCheckedChanged: apply,
-					Text: "В России: Spotify и другие сервисы, закрытые для России, — через Tor (даже в «Авто»)"},
-				dcl.Label{AssignTo: &lblTor, ColumnSpan: 2, TextColor: cOk.walk()},
-			},
-		},
-		dcl.GroupBox{
-			Title: "Проверить сайт", Font: groupFont,
-			Layout: dcl.VBox{},
-			Children: []dcl.Widget{
-				dcl.Composite{Layout: dcl.HBox{MarginsZero: true}, Children: []dcl.Widget{
-					dcl.LineEdit{AssignTo: &leHost, CueBanner: "например, youtube.com", OnKeyDown: func(k walk.Key) {
-						if k == walk.KeyReturn {
-							runTest()
-						}
-					}},
-					dcl.PushButton{AssignTo: &btnTest, Text: "Проверить", OnClicked: runTest},
-				}},
-				dcl.TextEdit{AssignTo: &teTest, ReadOnly: true, VScroll: true, MinSize: dcl.Size{Height: 100},
-					Font: dcl.Font{Family: "Segoe UI", PointSize: 8}},
-			},
-		},
-		dcl.GroupBox{
-			Title: "Сайты", Font: groupFont,
-			Layout: dcl.VBox{},
-			Children: []dcl.Widget{
-				dcl.TextEdit{AssignTo: &teSites, ReadOnly: true, VScroll: true, MinSize: dcl.Size{Height: 70}, Text: sites()},
-				dcl.PushButton{Text: "Забыть все сайты", OnClicked: func() {
-					u.a.eng.Forget("")
-					_ = teSites.SetText(sites())
-				}},
-			},
-		},
-		dcl.GroupBox{
-			Title: "Дополнительно", Font: groupFont,
-			Layout: dcl.Grid{Columns: 2},
-			Children: []dcl.Widget{
-				dcl.Label{Text: "Шифрованный DNS:"},
-				dcl.ComboBox{AssignTo: &cbDoH, Model: dohNames, CurrentIndex: indexOf(dohIDs, st.DoH), OnCurrentIndexChanged: apply},
-				dcl.CheckBox{AssignTo: &chkSys, ColumnSpan: 2, Text: "Системный прокси (иначе укажите 127.0.0.1 в программах)", Checked: st.SysProxy, OnCheckedChanged: apply},
-				dcl.CheckBox{AssignTo: &chkAuto, ColumnSpan: 2, Text: "Включать обход при запуске программы", Checked: st.AutoStart, OnCheckedChanged: apply},
-				dcl.Label{Text: "Порт прокси:"},
-				dcl.NumberEdit{AssignTo: &nePort, Value: float64(st.Port), MinValue: 1024, MaxValue: 65535, Decimals: 0, OnValueChanged: apply},
-			},
-		},
-		dcl.GroupBox{
-			Title: "Журнал", Font: groupFont,
-			Layout: dcl.VBox{},
-			Children: []dcl.Widget{
-				dcl.TextEdit{AssignTo: &teLog, ReadOnly: true, VScroll: true, MinSize: dcl.Size{Height: 130},
-					Font: dcl.Font{Family: "Consolas", PointSize: 8}},
-			},
-		},
-		dcl.Composite{
-			Layout: dcl.HBox{MarginsZero: true},
-			Children: []dcl.Widget{
-				dcl.PushButton{Text: "← Назад", OnClicked: func() { u.setView(viewHome) }},
-				dcl.HSpacer{},
-				dcl.PushButton{Text: "Выход из программы", OnClicked: func() {
-					if walk.MsgBox(u.mw, "Обход", "Выключить обход и закрыть программу?", walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) == win.IDYES {
-						go u.quit()
-					}
-				}},
-			},
-		},
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Колёсико мыши: список меняется колёсиком, только если он в фокусе; иначе прокручивается страница.
-
-var (
-	wheelMu    sync.Mutex
-	wheelOrig  = map[win.HWND]uintptr{}
-	wheelPage  = map[win.HWND]win.HWND{}
-	wheelProcP uintptr
-)
-
-func wheelOnlyWhenFocused(h, page win.HWND) {
-	if h == 0 {
-		return
-	}
-	wheelMu.Lock()
-	defer wheelMu.Unlock()
-	if _, ok := wheelOrig[h]; ok {
-		return
-	}
-	if wheelProcP == 0 {
-		wheelProcP = syscall.NewCallback(wheelProc)
-	}
-	wheelPage[h] = page
-	wheelOrig[h] = win.SetWindowLongPtr(h, win.GWLP_WNDPROC, wheelProcP)
-}
-
-func wheelProc(h win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
-	wheelMu.Lock()
-	orig, page := wheelOrig[h], wheelPage[h]
-	wheelMu.Unlock()
-	if msg == win.WM_MOUSEWHEEL && win.GetFocus() != h {
-		if page != 0 {
-			win.SendMessage(page, msg, wParam, lParam)
-		}
-		return 0
-	}
-	return win.CallWindowProc(orig, h, msg, wParam, lParam)
 }

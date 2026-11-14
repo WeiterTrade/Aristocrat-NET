@@ -1,4 +1,4 @@
-﻿; Установщик «Обход» для Windows 7, 8, 8.1, 10, 11 (x86 и x64).
+﻿; Установщик Aristocrat NET для Windows 7, 8, 8.1, 10, 11 (x86 и x64).
 ; Сборка: makensis -DVERSION=1.0.0 -DVIVERSION=1.0.0.0 -DSRC=<папка со сборкой> obhod.nsi
 ;   SRC/Obhod.exe, SRC/README.txt, SRC/obhod.ico
 ;   SRC/tor-legacy/  — Tor 13.5.x (последний с поддержкой Windows 7/8)
@@ -22,18 +22,18 @@ SetCompressor /SOLID lzma
 !include "x64.nsh"
 !include "FileFunc.nsh"
 
-Name "Обход ${VERSION}"
-OutFile "Obhod-Setup-${VERSION}.exe"
+Name "Aristocrat NET ${VERSION}"
+OutFile "AristocratNET-Setup-${VERSION}.exe"
 InstallDir "$PROGRAMFILES\Obhod"
 InstallDirRegKey HKLM "Software\Obhod" "InstallDir"
 RequestExecutionLevel admin
-BrandingText "Обход ${VERSION}"
+BrandingText "Aristocrat NET ${VERSION}"
 
 !define MUI_ICON "${SRC}/obhod.ico"
 !define MUI_UNICON "${SRC}/obhod.ico"
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN "$INSTDIR\Obhod.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Запустить «Обход»"
+!define MUI_FINISHPAGE_RUN_TEXT "Запустить Aristocrat NET"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -44,8 +44,8 @@ BrandingText "Обход ${VERSION}"
 !insertmacro MUI_LANGUAGE "Russian"
 
 VIProductVersion "${VIVERSION}"
-VIAddVersionKey /LANG=${LANG_RUSSIAN} "ProductName" "Обход"
-VIAddVersionKey /LANG=${LANG_RUSSIAN} "FileDescription" "Обход блокировок: DPI + Tor"
+VIAddVersionKey /LANG=${LANG_RUSSIAN} "ProductName" "Aristocrat NET"
+VIAddVersionKey /LANG=${LANG_RUSSIAN} "FileDescription" "Aristocrat NET: обход блокировок"
 VIAddVersionKey /LANG=${LANG_RUSSIAN} "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=${LANG_RUSSIAN} "ProductVersion" "${VERSION}"
 VIAddVersionKey /LANG=${LANG_RUSSIAN} "LegalCopyright" "MIT"
@@ -59,7 +59,7 @@ Function .onInit
   ${EndIf}
 FunctionEnd
 
-Section "Обход" SecMain
+Section "Aristocrat NET" SecMain
   SectionIn RO
   ; Остановить запущенную копию, чтобы заменить файлы.
   nsExec::Exec 'taskkill /F /IM Obhod.exe'
@@ -91,16 +91,19 @@ Section "Обход" SecMain
 
   ; Ярлыки
   SetOutPath "$INSTDIR"
-  CreateDirectory "$SMPROGRAMS\Обход"
-  CreateShortcut "$SMPROGRAMS\Обход\Обход.lnk" "$INSTDIR\Obhod.exe" "" "$INSTDIR\obhod.ico"
-  CreateShortcut "$SMPROGRAMS\Обход\Удалить «Обход».lnk" "$INSTDIR\uninstall.exe"
-  CreateShortcut "$DESKTOP\Обход.lnk" "$INSTDIR\Obhod.exe" "" "$INSTDIR\obhod.ico"
+  ; ярлыки прежнего названия
+  Delete "$DESKTOP\Обход.lnk"
+  RMDir /r "$SMPROGRAMS\Обход"
+  CreateDirectory "$SMPROGRAMS\Aristocrat NET"
+  CreateShortcut "$SMPROGRAMS\Aristocrat NET\Aristocrat NET.lnk" "$INSTDIR\Obhod.exe" "" "$INSTDIR\obhod.ico"
+  CreateShortcut "$SMPROGRAMS\Aristocrat NET\Удалить Aristocrat NET.lnk" "$INSTDIR\uninstall.exe"
+  CreateShortcut "$DESKTOP\Aristocrat NET.lnk" "$INSTDIR\Obhod.exe" "" "$INSTDIR\obhod.ico"
 
   ; Удаление через «Программы и компоненты»
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKLM "Software\Obhod" "InstallDir" "$INSTDIR"
   !define UNKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Obhod"
-  WriteRegStr HKLM "${UNKEY}" "DisplayName" "Обход"
+  WriteRegStr HKLM "${UNKEY}" "DisplayName" "Aristocrat NET"
   WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "${UNKEY}" "Publisher" "Obhod"
   WriteRegStr HKLM "${UNKEY}" "DisplayIcon" "$INSTDIR\obhod.ico"
@@ -125,6 +128,8 @@ Section "Uninstall"
   ${EndIf}
   Delete "$DESKTOP\Обход.lnk"
   RMDir /r "$SMPROGRAMS\Обход"
+  Delete "$DESKTOP\Aristocrat NET.lnk"
+  RMDir /r "$SMPROGRAMS\Aristocrat NET"
   RMDir /r "$INSTDIR\tor"
   Delete "$INSTDIR\Obhod.exe"
   Delete "$INSTDIR\README.txt"

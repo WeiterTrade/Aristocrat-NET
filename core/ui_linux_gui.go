@@ -33,10 +33,10 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 
 	start, end := systray.RunWithExternalLoop(func() {
 		systray.SetIcon(trayPNG)
-		systray.SetTitle("Обход")
-		systray.SetTooltip("Обход")
+		systray.SetTitle(appTitle)
+		systray.SetTooltip(appTitle)
 		systray.SetOnTapped(request)
-		mOpen := systray.AddMenuItem("Открыть «Обход»", "")
+		mOpen := systray.AddMenuItem("Открыть "+appTitle, "")
 		mToggle := systray.AddMenuItem("Включить обход", "")
 		systray.AddSeparator()
 		mQuit := systray.AddMenuItem("Выход", "")
@@ -67,10 +67,10 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 					last = state
 					if state == "on" {
 						mToggle.SetTitle("Выключить обход")
-						systray.SetTooltip("Обход — шифрование включено")
+						systray.SetTooltip(appTitle + " — шифрование включено")
 					} else {
 						mToggle.SetTitle("Включить обход")
-						systray.SetTooltip("Обход — выключен")
+						systray.SetTooltip(appTitle + " — выключено")
 					}
 				}
 			}
@@ -99,7 +99,7 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 			openWindow(url)
 			continue
 		}
-		w.SetTitle("Обход")
+		w.SetTitle(appTitle)
 		w.SetSize(460, 820, webview.HintNone)
 		w.Navigate(url)
 		stop := make(chan struct{})

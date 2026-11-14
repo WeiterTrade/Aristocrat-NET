@@ -6,11 +6,11 @@ version: ${VERSION}
 release: 1
 section: net
 priority: optional
-maintainer: Obhod <obhod@users.noreply.github.com>
+maintainer: Aristocrat NET <obhod@users.noreply.github.com>
 description: |
-  Обход блокировок без VPN-подписок: локальный обход DPI (дробление TLS,
-  disorder, DoH), а для сайтов, заблокированных по IP, — автоматически Tor
-  с мостами (snowflake, webtunnel, obfs4).
+  Aristocrat NET — обход блокировок без VPN-подписок: локальный обход DPI
+  (дробление TLS, disorder, DoH), а для сайтов, заблокированных по IP, —
+  автоматически Cloudflare WARP или Tor с мостами.
 homepage: https://github.com/
 license: MIT
 recommends:

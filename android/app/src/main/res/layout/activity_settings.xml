@@ -14,7 +14,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text"
             android:textSize="22sp"
             android:textStyle="bold" />
 
@@ -30,7 +30,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/route_label"
-                android:textColor="@color/muted" />
+                android:textColor="@color/gold" />
 
             <Spinner
                 android:id="@+id/route"
@@ -46,7 +46,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="@string/heavy_label"
-                android:textColor="@color/muted" />
+                android:textColor="@color/gold" />
 
             <Spinner
                 android:id="@+id/heavy"
@@ -62,7 +62,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="@string/bridges_label"
-                android:textColor="@color/muted" />
+                android:textColor="@color/gold" />
 
             <Spinner
                 android:id="@+id/bridges"
@@ -78,7 +78,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="@string/country_label"
-                android:textColor="@color/muted" />
+                android:textColor="@color/gold" />
 
             <Spinner
                 android:id="@+id/country"
@@ -108,6 +108,10 @@
 
                 <Button
                     android:id="@+id/saveCustom"
+                    android:background="@drawable/btn_ghost"
+                    android:paddingStart="18dp"
+                    android:paddingEnd="18dp"
+                    android:textColor="@color/gold_light"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/save"
@@ -143,7 +147,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/apps_label"
-                android:textColor="@color/muted" />
+                android:textColor="@color/gold" />
 
             <CheckBox
                 android:id="@+id/keepLocal"
@@ -179,6 +183,10 @@
 
                 <Button
                     android:id="@+id/apps"
+                    android:background="@drawable/btn_ghost"
+                    android:paddingStart="18dp"
+                    android:paddingEnd="18dp"
+                    android:textColor="@color/gold_light"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/apps_button"
@@ -186,6 +194,10 @@
 
                 <Button
                     android:id="@+id/warpReset"
+                    android:background="@drawable/btn_ghost"
+                    android:paddingStart="18dp"
+                    android:paddingEnd="18dp"
+                    android:textColor="@color/gold_light"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
@@ -205,18 +217,24 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/log_label"
-                android:textColor="@color/muted" />
+                android:text="@string/other_label"
+                android:textColor="@color/gold"
+                android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/log"
+                android:id="@+id/openLog"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/link_bg"
+                android:clickable="true"
                 android:focusable="true"
-                android:textColor="#C8CDD3"
-                android:textIsSelectable="true"
-                android:textSize="11sp"
-                android:typeface="monospace" />
+                android:minHeight="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="4dp"
+                android:text="@string/log_label_row"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

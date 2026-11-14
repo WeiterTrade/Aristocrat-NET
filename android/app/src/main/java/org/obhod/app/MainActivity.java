@@ -115,7 +115,7 @@ public class MainActivity extends Activity {
         switch (st) {
             case "on":
                 status.setText(R.string.status_on);
-                status.setTextColor(0xFFC8FFD8);
+                status.setTextColor(0xFFF7E7B8);
                 break;
             case "starting":
                 status.setText(R.string.status_starting);

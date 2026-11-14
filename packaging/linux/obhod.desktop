@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Обход
-Name[en]=Obhod
+Name=Aristocrat NET
+Name[en]=Aristocrat NET
 GenericName=Обход блокировок
-Comment=Обход DPI и Tor для заблокированных сайтов
+Comment=Обход блокировок: DPI, WARP и Tor
 Exec=/opt/obhod/obhod
 Icon=obhod
 Terminal=false

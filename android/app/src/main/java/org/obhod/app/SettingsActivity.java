@@ -28,14 +28,13 @@ public class SettingsActivity extends Activity {
     private Spinner route, heavy, bridges, country;
     private View customBox, bridgesLabel, heavyLabel, countryLabel;
     private EditText custom;
-    private TextView log, torLine;
+    private TextView torLine;
     private String[] routeValues, heavyValues, bridgeValues, countryValues;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
-            log.setText(ObhodVpnService.logTail(60));
             String st = ObhodVpnService.state;
             String line = "";
             if ("on".equals(st) || "starting".equals(st)) {
@@ -62,7 +61,7 @@ public class SettingsActivity extends Activity {
         bridgesLabel = findViewById(R.id.bridgesLabel);
         customBox = findViewById(R.id.customBox);
         custom = findViewById(R.id.custom);
-        log = findViewById(R.id.log);
+        findViewById(R.id.openLog).setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         torLine = findViewById(R.id.torLine);
         routeValues = getResources().getStringArray(R.array.route_values);
         bridgeValues = getResources().getStringArray(R.array.bridge_values);
