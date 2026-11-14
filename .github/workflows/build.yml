@@ -13,6 +13,10 @@ permissions:
   contents: write
 
 env:
+  # go.sum не хранится в репозитории: недостающие суммы Go дописывает сам во время сборки.
+  # «go mod tidy» не подходит: он учитывает сразу все версии Go, а сетевой стек WARP
+  # собирается из разных версий gVisor для Go 1.20 (Windows 7) и для новых Go.
+  GOFLAGS: -mod=mod
   # Go 1.20 — последняя версия Go, чьи программы запускаются на Windows 7/8.
   GO_WIN7: "1.20.14"
   # Tor 13.5.x — последняя ветка с транспортами, работающими на Windows 7/8.
@@ -52,7 +56,7 @@ jobs:
           cache: false
       - name: Зависимости Go (go.sum)
         working-directory: core
-        run: go mod tidy
+        run: go mod download
       - name: Тесты ядра (Go 1.20)
         working-directory: core
         run: |
@@ -76,7 +80,7 @@ jobs:
           cache: false
       - name: Зависимости Go (go.sum)
         working-directory: core
-        run: go mod tidy
+        run: go mod download
       - name: Инструменты (NSIS, windres + mingw-gcc для препроцессора ресурсов)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis binutils-mingw-w64-i686 gcc-mingw-w64-i686 zip
       - name: Иконка и манифест программы
@@ -133,7 +137,7 @@ jobs:
         # для новых Go берём свежую.
         run: |
           go get gvisor.dev/gvisor@v0.0.0-20250503011706-39ed1f5ac29c
-          go mod tidy
+          go mod download
       - name: Библиотеки окна (GTK3, WebKitGTK 4.1)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
       - name: Сборка obhod (linux/amd64, нативное окно + трей)
@@ -182,7 +186,7 @@ jobs:
         # для новых Go берём свежую.
         run: |
           go get gvisor.dev/gvisor@v0.0.0-20250503011706-39ed1f5ac29c
-          go mod tidy
+          go mod download
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
