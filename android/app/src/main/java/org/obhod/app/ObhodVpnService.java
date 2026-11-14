@@ -59,6 +59,9 @@ public class ObhodVpnService extends VpnService {
     private Process core;
     private boolean torBound;
     private Thread worker;
+    private static ObhodVpnService instance; // для перезапуска Tor из потока журнала
+    private int torPhase = 0;                // этап автовыбора мостов: 0 — snowflake, 1 — obfs4/meek
+    private File torCoreBin, torLyrebird, torData, torLogFile;
 
     static void start(Context c) {
         Intent i = new Intent(c, ObhodVpnService.class).setAction(ACTION_START);
@@ -112,6 +115,7 @@ public class ObhodVpnService extends VpnService {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        instance = this;
         String action = intent != null ? intent.getAction() : ACTION_START;
         if (ACTION_STOP.equals(action)) {
             stopAll();
@@ -189,6 +193,12 @@ public class ObhodVpnService extends VpnService {
                 try {
                     //noinspection ResultOfMethodCallIgnored
                     torLog.delete();
+                    torPhase = 0;
+                    torCoreBin = coreBin;
+                    torLyrebird = lyrebird;
+                    torData = data;
+                    torLogFile = torLog;
+                    killTorProcess(); // tor нельзя дважды запустить в одном процессе — начинаем с чистого
                     writeTorrc(coreBin, lyrebird, data, torLog);
                     torBound = bindService(new Intent(this, TorService.class), torConn, BIND_AUTO_CREATE);
                     torState = "Tor подключается…";
@@ -317,6 +327,7 @@ public class ObhodVpnService extends VpnService {
                 "-lyrebird", lyrebird.getAbsolutePath(),
                 "-tor-log", torLog.getAbsolutePath(),
                 "-tor-country", Prefs.torCountry(this),
+                "-tor-phase", String.valueOf(torPhase),
                 "-geoip-dir", geo.getAbsolutePath())
                 .redirectErrorStream(true).start();
         String out = readAll(p.getInputStream());
@@ -360,6 +371,9 @@ public class ObhodVpnService extends VpnService {
                 String l;
                 while ((l = r.readLine()) != null) {
                     log(l);
+                    String mm = l.replaceFirst("^\\d\\d:\\d\\d:\\d\\d ", "");
+                    if (mm.startsWith("Tor: через snowflake не подключается")) switchBridges(1);
+                    else if (mm.startsWith("Tor: запасные мосты тоже")) switchBridges(0);
                     String m = l.replaceFirst("^\\d\\d:\\d\\d:\\d\\d ", "");
                     if (m.startsWith("Tor подключён")) torState = "Tor подключён";
                     else if (m.startsWith("Tor: подключение ")) torState = "Tor подключается… " + m.substring(17);
@@ -461,5 +475,47 @@ public class ObhodVpnService extends VpnService {
                 log("Не удалось прочитать системный журнал: " + e.getMessage());
             }
         }, "obhod-tor-crash").start();
+    }
+
+    /** Автовыбор мостов на Android: ядро сообщает, что Tor застрял, — перезапускаем TorService с другими мостами. */
+    private static void switchBridges(final int phase) {
+        final ObhodVpnService s = instance;
+        if (s == null) return;
+        new Thread(() -> s.restartTor(phase), "obhod-tor-restart").start();
+    }
+
+    private synchronized void restartTor(int phase) {
+        if (!"on".equals(state) || torCoreBin == null) return;
+        torPhase = phase;
+        torState = phase == 1 ? "Tor: пробую мосты obfs4 и meek…" : "Tor: снова пробую snowflake…";
+        try {
+            if (torBound) {
+                unbindService(torConn);
+                torBound = false;
+            }
+            stopService(new Intent(this, TorService.class));
+            Thread.sleep(800);
+            killTorProcess();
+            Thread.sleep(700);
+            //noinspection ResultOfMethodCallIgnored
+            torLogFile.delete();
+            writeTorrc(torCoreBin, torLyrebird, torData, torLogFile);
+            torBound = bindService(new Intent(this, TorService.class), torConn, BIND_AUTO_CREATE);
+        } catch (Exception e) {
+            log("Не удалось перезапустить Tor: " + e.getMessage());
+        }
+    }
+
+    /** Завершает процесс :tor этого приложения (если он остался от прошлого запуска). */
+    private void killTorProcess() {
+        android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        if (am == null) return;
+        List<android.app.ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
+        if (list == null) return;
+        for (android.app.ActivityManager.RunningAppProcessInfo p : list) {
+            if (p.processName != null && p.processName.endsWith(":tor")) {
+                android.os.Process.killProcess(p.pid);
+            }
+        }
     }
 }

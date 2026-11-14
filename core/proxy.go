@@ -45,7 +45,7 @@ type Engine struct {
 }
 
 func NewEngine(r *Resolver, logf func(string, ...any)) *Engine {
-	e := &Engine{Resolver: r, Timeout: 3 * time.Second, TorWait: 40 * time.Second, DialTimeout: 4 * time.Second,
+	e := &Engine{Resolver: r, Timeout: 3 * time.Second, TorWait: 90 * time.Second, DialTimeout: 4 * time.Second,
 		learned: map[string]string{}, blocked: map[string]string{}, logf: logf}
 	e.Mode.Store("auto")
 	e.Route.Store(RouteAuto)

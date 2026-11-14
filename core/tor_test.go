@@ -319,14 +319,31 @@ func TestAutoBridges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Bridge webtunnel", "Bridge snowflake", "Bridge obfs4 192.0.2.1", "Bridge meek_lite",
-		"ClientTransportPlugin snowflake exec", "webtunnel"} {
+	// Этап 1: snowflake и свои мосты; заблокированные obfs4/meek не мешают подключению.
+	for _, want := range []string{"Bridge webtunnel", "Bridge snowflake", "ClientTransportPlugin snowflake exec", "webtunnel"} {
 		if !strings.Contains(rc, want) {
 			t.Errorf("нет %q в\n%s", want, rc)
 		}
 	}
+	if strings.Contains(rc, "Bridge obfs4") || strings.Contains(rc, "Bridge meek_lite") {
+		t.Errorf("на первом этапе obfs4/meek не нужны:\n%s", rc)
+	}
 	if strings.Index(rc, "Bridge webtunnel") > strings.Index(rc, "Bridge snowflake") {
 		t.Error("свои мосты должны идти первыми")
+	}
+	// Этап 2 (snowflake не подключился): obfs4, meek и снова свои мосты.
+	rc, err = BuildTorrc(TorOptions{Bridges: "auto", Custom: "webtunnel [2001:db8::2]:443 FP url=https://w.example/x ver=0.0.1",
+		SocksAddr: torSocksAddr, PTConfigPath: ptPath, PTDir: "pt", AutoPhase: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Bridge webtunnel", "Bridge obfs4 192.0.2.1", "Bridge meek_lite"} {
+		if !strings.Contains(rc, want) {
+			t.Errorf("этап 2: нет %q в\n%s", want, rc)
+		}
+	}
+	if strings.Contains(rc, "Bridge snowflake") {
+		t.Error("этап 2: snowflake уже не помог")
 	}
 }
 
@@ -347,5 +364,30 @@ func TestTorExitCountry(t *testing.T) {
 	rc, _ = BuildTorrc(TorOptions{Bridges: "none", SocksAddr: "127.0.0.1:9", DataDir: "d"})
 	if strings.Contains(rc, "ExitNodes") {
 		t.Fatal("без выбора страны ExitNodes не нужен")
+	}
+}
+
+// Перезапуск Tor (смена страны или мостов) не должен оставлять ожидающие соединения
+// висеть на старом запуске: раньше они ждали 40 секунд и падали, хотя Tor уже подключился.
+func TestTorWaitReadyAcrossRestart(t *testing.T) {
+	tr := NewTor(t.Logf)
+	tr.mu.Lock()
+	tr.status = "starting"
+	tr.mu.Unlock()
+	done := make(chan bool, 1)
+	go func() { done <- tr.WaitReady(5 * time.Second) }()
+	time.Sleep(200 * time.Millisecond)
+	tr.mu.Lock() // «перезапуск»: новый канал готовности
+	tr.ready = make(chan struct{})
+	tr.mu.Unlock()
+	time.Sleep(200 * time.Millisecond)
+	tr.setReady()
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("ожидание вернуло false")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ожидание зависло на старом запуске")
 	}
 }

@@ -66,6 +66,9 @@ type TorOptions struct {
 	ForAndroid   bool   // DataDirectory и порты управления задаёт TorService
 	LogFile      string // Android: куда tor пишет журнал (его читает ядро — для прогресса и причин ошибок)
 	ExitCountry  string // страна выхода (код ISO: de, nl, us…); пусто — любая
+	// AutoPhase — этап автовыбора мостов: 0 — snowflake и свои мосты (лучше всего проходят
+	// блокировки в России и Казахстане), 1 — запасной: obfs4, meek и свои мосты.
+	AutoPhase int
 }
 
 // TorCountries — страны выхода из Tor, которые можно выбрать (в них много выходных узлов).
@@ -166,8 +169,17 @@ func BuildTorrc(o TorOptions) (string, error) {
 				lines = append(lines, l)
 			}
 		}
-		for _, k := range []string{"snowflake", "obfs4", "meek", "meek-azure"} {
+		kinds := []string{"snowflake"}
+		if o.AutoPhase == 1 {
+			kinds = []string{"obfs4", "meek", "meek-azure"}
+		}
+		for _, k := range kinds {
 			lines = append(lines, pt.Bridges[k]...)
+		}
+		if len(pt.Bridges["snowflake"]) == 0 && o.AutoPhase == 0 { // в этой версии Tor нет snowflake
+			for _, k := range []string{"obfs4", "meek", "meek-azure"} {
+				lines = append(lines, pt.Bridges[k]...)
+			}
 		}
 		if len(lines) == 0 {
 			return "", errors.New("в pt_config.json нет встроенных мостов")
@@ -294,6 +306,7 @@ type Tor struct {
 	errMsg   string
 	logf     func(string, ...any)
 	ready    chan struct{}
+	watching bool // идёт проверка внешнего Tor (watchExternal)
 }
 
 func NewTor(logf func(string, ...any)) *Tor {
@@ -303,17 +316,26 @@ func NewTor(logf func(string, ...any)) *Tor {
 // UseExternal — Tor запущен кем-то другим (TorService на Android).
 func (t *Tor) UseExternal(socks string) {
 	t.mu.Lock()
-	t.external, t.socks, t.status, t.progress = true, socks, "starting", 0
+	t.external, t.socks, t.status, t.progress, t.changed = true, socks, "starting", 0, time.Now()
 	t.ready = make(chan struct{})
+	start := !t.watching
+	t.watching = true
 	t.mu.Unlock()
-	go t.watchExternal()
+	if start {
+		go t.watchExternal()
+	}
 }
 
 // watchExternal считает внешний Tor готовым, когда через него открывается соединение.
 func (t *Tor) watchExternal() {
+	defer func() {
+		t.mu.Lock()
+		t.watching = false
+		t.mu.Unlock()
+	}()
 	for i := 0; ; i++ {
 		t.mu.Lock()
-		if !t.external || t.status == "off" {
+		if !t.external || t.status == "off" || t.status == "ready" {
 			t.mu.Unlock()
 			return
 		}
@@ -351,7 +373,7 @@ func (t *Tor) Status() (status string, progress int, errMsg string) {
 func (t *Tor) Stalled() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.status == "starting" && !t.external && time.Since(t.changed) > 90*time.Second
+	return t.status == "starting" && time.Since(t.changed) > 90*time.Second
 }
 
 // StallHint — что посоветовать, если Tor не подключается.
@@ -364,22 +386,32 @@ func (t *Tor) Enabled() bool {
 	return t.status == "starting" || t.status == "ready"
 }
 
-// WaitReady ждёт подключения Tor не дольше d.
+// WaitReady ждёт подключения Tor не дольше d. Состояние проверяется заново каждые полсекунды:
+// если Tor за это время перезапустили (сменили мосты или страну), ожидание не «зависает»
+// на старом запуске, а дожидается нового.
 func (t *Tor) WaitReady(d time.Duration) bool {
-	t.mu.Lock()
-	ch, st := t.ready, t.status
-	t.mu.Unlock()
-	if st == "ready" {
-		return true
-	}
-	if st != "starting" {
-		return false
-	}
-	select {
-	case <-ch:
-		return true
-	case <-time.After(d):
-		return false
+	end := time.Now().Add(d)
+	for {
+		t.mu.Lock()
+		ch, st := t.ready, t.status
+		t.mu.Unlock()
+		if st == "ready" {
+			return true
+		}
+		if st != "starting" {
+			return false
+		}
+		left := time.Until(end)
+		if left <= 0 {
+			return false
+		}
+		if left > 500*time.Millisecond {
+			left = 500 * time.Millisecond
+		}
+		select {
+		case <-ch:
+		case <-time.After(left):
+		}
 	}
 }
 
@@ -428,11 +460,14 @@ func (t *Tor) Start(torExe, torrcPath, libDir, workDir, socks, pidFile string) e
 					t.progress, t.changed = p, time.Now()
 				}
 				t.mu.Unlock()
-				if p == 100 {
+				t.mu.Lock()
+				cur := t.cmd == cmd
+				t.mu.Unlock()
+				if p == 100 && cur { // сообщение старого, уже остановленного tor не считается
 					t.setReady()
 				}
 			}
-			if strings.Contains(line, "[warn]") || strings.Contains(line, "[err]") {
+			if (strings.Contains(line, "[warn]") || strings.Contains(line, "[err]")) && !torNoise(line) {
 				t.logf("tor: %s", trimTorLog(line))
 				tailMu.Lock()
 				tail = append(tail, trimTorLog(line))
@@ -541,11 +576,15 @@ func (t *Tor) lost() {
 		t.mu.Unlock()
 		return
 	}
-	t.status, t.progress = "starting", 0
+	t.status, t.progress, t.changed = "starting", 0, time.Now()
 	t.ready = make(chan struct{})
+	start := !t.watching
+	t.watching = true
 	t.mu.Unlock()
 	t.logf("Tor перестал отвечать — пока он не вернётся, сайты открываются без него")
-	go t.watchExternal()
+	if start {
+		go t.watchExternal()
+	}
 }
 
 // SetProgress — прогресс подключения внешнего Tor (из его журнала).
@@ -723,4 +762,10 @@ func tailTorLog(path string, t *Tor, logf func(string, ...any)) {
 			}
 		}
 	}
+}
+
+// torNoise — предупреждения tor, которые ничего не значат для пользователя
+// (относительные пути в torrc — так задумано: из-за кириллицы в пути к папке пользователя).
+func torNoise(line string) bool {
+	return strings.Contains(line, "is relative and will resolve to")
 }

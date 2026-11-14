@@ -92,6 +92,9 @@ func NewWarp(dir string, logf func(string, ...any)) *Warp {
 
 func (w *Warp) Name() string { return StratWarp }
 
+// label — как называть туннель в журнале.
+func (w *Warp) label() string { return "WARP" }
+
 func (w *Warp) Enabled() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -112,21 +115,28 @@ func (w *Warp) Endpoint() string {
 	return w.endpoint
 }
 
+// WaitReady ждёт подключения не дольше d (состояние перепроверяется каждые полсекунды,
+// чтобы переподключение туннеля не оставляло ожидающих на старом запуске).
 func (w *Warp) WaitReady(d time.Duration) bool {
-	w.mu.Lock()
-	ch, st := w.ready, w.status
-	w.mu.Unlock()
-	if st == "ready" {
-		return true
-	}
-	if st != "starting" || d <= 0 {
-		return false
-	}
-	select {
-	case <-ch:
-		return true
-	case <-time.After(d):
-		return false
+	end := time.Now().Add(d)
+	for {
+		w.mu.Lock()
+		ch, st := w.ready, w.status
+		w.mu.Unlock()
+		if st == "ready" {
+			return true
+		}
+		left := time.Until(end)
+		if st != "starting" || left <= 0 {
+			return false
+		}
+		if left > 500*time.Millisecond {
+			left = 500 * time.Millisecond
+		}
+		select {
+		case <-ch:
+		case <-time.After(left):
+		}
 	}
 }
 
@@ -171,7 +181,7 @@ func (w *Warp) fail(gen int, msg string) {
 		w.status, w.errMsg = "error", msg
 	}
 	w.mu.Unlock()
-	w.logf("WARP: %s", msg)
+	w.logf("%s: %s", w.label(), msg)
 }
 
 func (w *Warp) run(gen int) {
@@ -382,10 +392,11 @@ func (w *Warp) probe(acc *warpAccount, ep string) (*device.Device, *netstack.Net
 		}
 	}
 	if len(addrs) == 0 {
-		return nil, nil, errors.New("в аккаунте WARP нет адреса")
+		return nil, nil, errors.New("в настройках туннеля нет адреса")
 	}
 	dns := []netip.Addr{netip.MustParseAddr("1.1.1.1"), netip.MustParseAddr("1.0.0.1")}
-	tdev, tnet, err := netstack.CreateNetTUN(addrs, dns, warpMTU)
+	mtu := warpMTU
+	tdev, tnet, err := netstack.CreateNetTUN(addrs, dns, mtu)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -432,7 +443,7 @@ func (w *Warp) Dial(ctx context.Context, host string, port int) (net.Conn, error
 	tnet, st := w.tnet, w.status
 	w.mu.Unlock()
 	if tnet == nil || st != "ready" {
-		return nil, errors.New("WARP не подключён")
+		return nil, errors.New(w.label() + " не подключён")
 	}
 	var addrs []netip.Addr
 	if a, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
@@ -451,7 +462,7 @@ func (w *Warp) Dial(ctx context.Context, host string, port int) (net.Conn, error
 		select {
 		case r := <-ch:
 			if r.err != nil {
-				return nil, fmt.Errorf("DNS через WARP: %v", r.err)
+				return nil, fmt.Errorf("DNS через туннель: %v", r.err)
 			}
 			names = r.names
 		case <-ctx.Done():

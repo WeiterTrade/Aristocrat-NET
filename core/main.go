@@ -33,7 +33,7 @@ import (
 
 const appName = "Obhod"
 
-var appVersion = "0.6.1" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.6.3" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -103,6 +103,9 @@ type App struct {
 	eng      *Engine
 	res      *Resolver
 	tor      *Tor
+	torMu    sync.Mutex // запуски Tor — строго по одному
+	torRC    string     // torrc запущенного сейчас tor (чтобы не перезапускать без нужды)
+	torPhase int        // этап автовыбора мостов (см. TorOptions.AutoPhase)
 	warp     *Warp
 	torSocks string // внешний Tor (Android)
 	token    string
@@ -152,8 +155,11 @@ func (a *App) save() {
 	}
 }
 
-// startTor запускает встроенный tor (на ПК).
+// startTor запускает встроенный tor (на ПК). Вызовы идут строго по одному; если tor уже
+// работает с теми же настройками, он не перезапускается.
 func (a *App) startTor() {
+	a.torMu.Lock()
+	defer a.torMu.Unlock()
 	a.mu.Lock()
 	bridges, custom, country := a.s.Bridges, a.s.CustomBridges, a.s.TorCountry
 	a.mu.Unlock()
@@ -192,12 +198,19 @@ func (a *App) startTor() {
 	torrc, err := BuildTorrc(TorOptions{
 		Bridges: bridges, Custom: custom, SocksAddr: socks, DataDir: "tor-data",
 		PTConfigPath: paths.PTConfig, PTDir: ptDir, WorkDir: a.dir, GeoIPDir: geoDir, ExitCountry: country,
+		AutoPhase: a.torPhase,
 	})
 	if err != nil {
 		a.torErr = err.Error()
 		a.logf("Tor: %v", err)
 		return
 	}
+	// Порт SOCKS выбирается случайно — для сравнения настроек его не учитываем.
+	same := strings.Replace(torrc, socks, "", 1)
+	if a.tor.Enabled() && same == a.torRC {
+		return
+	}
+	a.torRC = same
 	torrcPath := filepath.Join(a.dir, "torrc")
 	if err := os.WriteFile(torrcPath, []byte(torrc), 0o600); err != nil {
 		a.torErr = err.Error()
@@ -234,6 +247,11 @@ func (a *App) applySettings(s Settings) error {
 			return a.enable()
 		}
 		torChanged := s.Bridges != old.Bridges || s.CustomBridges != old.CustomBridges || s.TorCountry != old.TorCountry
+		if torChanged {
+			a.torMu.Lock()
+			a.torPhase = 0
+			a.torMu.Unlock()
+		}
 		a.startUpstreams(torChanged)
 	}
 	return nil
@@ -265,6 +283,38 @@ func (s Settings) needs() (warp, tor bool) {
 		return false, false
 	}
 	return s.Heavy != HeavyTor, s.Heavy != HeavyWarp
+}
+
+// watchTorBridges — автовыбор мостов: если Tor долго не продвигается на snowflake,
+// перезапускаем его с obfs4 и meek, и наоборот (провайдеры блокируют разные мосты по-разному).
+func (a *App) watchTorBridges() {
+	for range time.Tick(10 * time.Second) {
+		if !a.eng.Running() || !a.tor.Stalled() {
+			continue
+		}
+		a.mu.Lock()
+		auto := a.s.Bridges == "auto"
+		a.mu.Unlock()
+		if !auto {
+			continue
+		}
+		a.torMu.Lock()
+		a.torPhase = 1 - a.torPhase
+		phase := a.torPhase
+		a.torMu.Unlock()
+		if phase == 1 {
+			a.logf("Tor: через snowflake не подключается — пробую мосты obfs4 и meek")
+		} else {
+			a.logf("Tor: запасные мосты тоже не подключаются — снова пробую snowflake")
+		}
+		if a.torSocks != "" {
+			// Android: Tor запускает приложение — оно увидит сообщение выше в журнале и само
+			// перезапустит TorService с другими мостами. Здесь только сбрасываем ожидание.
+			a.tor.UseExternal(a.torSocks)
+			continue
+		}
+		a.startTor()
+	}
 }
 
 // startUpstreams запускает или останавливает WARP и Tor под текущие настройки.
@@ -578,6 +628,7 @@ func main() {
 		routeFlag  = flag.String("route", "", "маршрут: auto | dpi | warp | tor")
 		heavyFlag  = flag.String("heavy", "", "запасной путь в режиме auto: warp-tor | warp | tor")
 		torCountry = flag.String("tor-country", "", "страна выхода из Tor: de, nl, us… или any")
+		torPhase   = flag.Int("tor-phase", 0, "этап автовыбора мостов: 0 — snowflake, 1 — obfs4 и meek (для -write-torrc)")
 		geoipDir   = flag.String("geoip-dir", "", "папка с файлами geoip/geoip6 (Android)")
 		torLog     = flag.String("tor-log", "", "журнал внешнего Tor (Android): torrc пишет его, ядро читает")
 		stratFlag  = flag.String("strategy", "", "метод обхода DPI: auto | tlsrec | split | ...")
@@ -636,7 +687,7 @@ func main() {
 	if *writeTorrc != "" {
 		torrc, err := BuildTorrc(TorOptions{Bridges: a.s.Bridges, Custom: a.s.CustomBridges, SocksAddr: torSocksAddr,
 			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true, LogFile: *torLog,
-			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir})
+			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir, AutoPhase: *torPhase})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "torrc:", err)
 			os.Exit(1)
@@ -657,6 +708,7 @@ func main() {
 	a.eng.Tor = a.tor
 	a.warp = NewWarp(a.dir, a.logf)
 	a.warp.DialTLS = a.eng.dialTLSBypass
+	go a.watchTorBridges()
 	a.eng.Warp = a.warp
 	a.eng.BlockQUIC = true
 	a.torSocks = *torSocks

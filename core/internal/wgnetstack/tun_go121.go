@@ -54,6 +54,7 @@ type netTun struct {
 	incomingPacket chan *buffer.View
 	closed         chan struct{}
 	closeOnce      sync.Once
+	writeMu        sync.RWMutex // Write и Close не пересекаются: после Close стек уже разобран
 	mtu            int
 	dnsServers     []netip.Addr
 	hasV4, hasV6   bool
@@ -147,6 +148,13 @@ func (tun *netTun) Read(buf [][]byte, sizes []int, offset int) (int, error) {
 }
 
 func (tun *netTun) Write(buf [][]byte, offset int) (int, error) {
+	tun.writeMu.RLock()
+	defer tun.writeMu.RUnlock()
+	select {
+	case <-tun.closed:
+		return 0, os.ErrClosed
+	default:
+	}
 	for _, buf := range buf {
 		packet := buf[offset:]
 		if len(packet) == 0 {
@@ -184,6 +192,8 @@ func (tun *netTun) WriteNotify() {
 func (tun *netTun) Close() error {
 	tun.closeOnce.Do(func() {
 		close(tun.closed)
+		tun.writeMu.Lock()
+		defer tun.writeMu.Unlock()
 		tun.stack.RemoveNIC(1)
 		tun.stack.Close()
 		tun.ep.RemoveNotify(tun.notifyHandle)

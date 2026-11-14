@@ -1252,7 +1252,15 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 	}
 
 	// Обработчики изменений включаются после создания окна (иначе сработали бы при начальной установке значений).
-	u.settingsReady = func() { ready = true }
+	u.settingsReady = func() {
+		ready = true
+		// Колёсико мыши над списком или полем порта не должно менять настройку, пока по нему
+		// не щёлкнули: иначе при прокрутке настроек незаметно менялись порт и маршрут.
+		_ = nePort.SetIncrement(0)
+		for _, cb := range []*walk.ComboBox{cbRoute, cbStrat, cbBridges, cbDoH, cbHeavy, cbCountry} {
+			wheelOnlyWhenFocused(cb.Handle(), u.settings.Handle())
+		}
+	}
 
 	// Обновление журнала, сайтов и состояния Tor, пока открыты настройки.
 	u.refreshSettings = func() {
@@ -1376,4 +1384,43 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 			},
 		},
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Колёсико мыши: список меняется колёсиком, только если он в фокусе; иначе прокручивается страница.
+
+var (
+	wheelMu    sync.Mutex
+	wheelOrig  = map[win.HWND]uintptr{}
+	wheelPage  = map[win.HWND]win.HWND{}
+	wheelProcP uintptr
+)
+
+func wheelOnlyWhenFocused(h, page win.HWND) {
+	if h == 0 {
+		return
+	}
+	wheelMu.Lock()
+	defer wheelMu.Unlock()
+	if _, ok := wheelOrig[h]; ok {
+		return
+	}
+	if wheelProcP == 0 {
+		wheelProcP = syscall.NewCallback(wheelProc)
+	}
+	wheelPage[h] = page
+	wheelOrig[h] = win.SetWindowLongPtr(h, win.GWLP_WNDPROC, wheelProcP)
+}
+
+func wheelProc(h win.HWND, msg uint32, wParam, lParam uintptr) uintptr {
+	wheelMu.Lock()
+	orig, page := wheelOrig[h], wheelPage[h]
+	wheelMu.Unlock()
+	if msg == win.WM_MOUSEWHEEL && win.GetFocus() != h {
+		if page != 0 {
+			win.SendMessage(page, msg, wParam, lParam)
+		}
+		return 0
+	}
+	return win.CallWindowProc(orig, h, msg, wParam, lParam)
 }
