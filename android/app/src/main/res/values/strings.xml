@@ -13,6 +13,7 @@
     <string name="sub_off">Трафик идёт как обычно</string>
     <string name="route_label">Маршрут</string>
     <string name="bridges_label">Мосты Tor</string>
+    <string name="country_label">Страна IP через Tor (режим «Всё через Tor»; WARP страну не меняет)</string>
     <string name="heavy_label">Если сайт заблокирован по IP</string>
     <string name="apps_label">Приложения мимо «Обхода»</string>
     <string name="apps_hint">Банки, госуслуги, Яндекс Музыка и другие сервисы с привязкой к стране работают напрямую, как без «Обхода».</string>
@@ -46,6 +47,36 @@
         <item>warp-tor</item>
         <item>warp</item>
         <item>tor</item>
+    </string-array>
+    <string-array name="country_names">
+        <item>Любая (быстрее)</item>
+        <item>Германия</item>
+        <item>Нидерланды</item>
+        <item>Финляндия</item>
+        <item>Швеция</item>
+        <item>Швейцария</item>
+        <item>Австрия</item>
+        <item>Франция</item>
+        <item>Польша</item>
+        <item>Румыния</item>
+        <item>Великобритания</item>
+        <item>США</item>
+        <item>Канада</item>
+    </string-array>
+    <string-array name="country_values">
+        <item>any</item>
+        <item>de</item>
+        <item>nl</item>
+        <item>fi</item>
+        <item>se</item>
+        <item>ch</item>
+        <item>at</item>
+        <item>fr</item>
+        <item>pl</item>
+        <item>ro</item>
+        <item>gb</item>
+        <item>us</item>
+        <item>ca</item>
     </string-array>
     <string-array name="bridge_names">
         <item>Автовыбор (рекомендуется)</item>

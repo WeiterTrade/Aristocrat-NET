@@ -72,6 +72,22 @@
                 android:focusable="true"
                 android:minHeight="48dp" />
 
+            <TextView
+                android:id="@+id/countryLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/country_label"
+                android:textColor="@color/muted" />
+
+            <Spinner
+                android:id="@+id/country"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:entries="@array/country_names"
+                android:focusable="true"
+                android:minHeight="48dp" />
+
             <LinearLayout
                 android:id="@+id/customBox"
                 android:layout_width="match_parent"

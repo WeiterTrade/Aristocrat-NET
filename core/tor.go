@@ -65,7 +65,27 @@ type TorOptions struct {
 	GeoIPDir     string
 	ForAndroid   bool   // DataDirectory и порты управления задаёт TorService
 	LogFile      string // Android: куда tor пишет журнал (его читает ядро — для прогресса и причин ошибок)
+	ExitCountry  string // страна выхода (код ISO: de, nl, us…); пусто — любая
 }
+
+// TorCountries — страны выхода из Tor, которые можно выбрать (в них много выходных узлов).
+var TorCountries = map[string]string{
+	"":   "Любая (быстрее)",
+	"de": "Германия",
+	"nl": "Нидерланды",
+	"fi": "Финляндия",
+	"se": "Швеция",
+	"ch": "Швейцария",
+	"at": "Австрия",
+	"fr": "Франция",
+	"pl": "Польша",
+	"ro": "Румыния",
+	"gb": "Великобритания",
+	"us": "США",
+	"ca": "Канада",
+}
+
+var torCountryOrder = []string{"", "de", "nl", "fi", "se", "ch", "at", "fr", "pl", "ro", "gb", "us", "ca"}
 
 var reBridgeTransport = regexp.MustCompile(`^\s*(?:Bridge\s+)?([a-z_0-9]+)\s`)
 
@@ -83,6 +103,9 @@ func BuildTorrc(o TorOptions) (string, error) {
 	if !o.ForAndroid {
 		w("DataDirectory %s", o.DataDir)
 		w("Log notice stdout")
+	}
+	geo := false
+	{
 		if o.GeoIPDir != "" {
 			for _, g := range []struct{ opt, file string }{{"GeoIPFile", "geoip"}, {"GeoIPv6File", "geoip6"}} {
 				p := filepath.Join(o.GeoIPDir, g.file)
@@ -92,9 +115,21 @@ func BuildTorrc(o TorOptions) (string, error) {
 				}
 				if fileExists(check) {
 					w("%s %s", g.opt, p)
+					geo = true
 				}
 			}
 		}
+	}
+	// Страна выхода: сайты видят IP из выбранной страны. Нужны файлы GeoIP (они идут вместе с Tor).
+	if c := strings.ToLower(strings.TrimSpace(o.ExitCountry)); c != "" {
+		if TorCountries[c] == "" {
+			return "", fmt.Errorf("неизвестная страна выхода Tor: %s", c)
+		}
+		if !geo {
+			return "", errors.New("для выбора страны Tor нужны файлы GeoIP, а их нет рядом с программой")
+		}
+		w("ExitNodes {%s}", c)
+		w("StrictNodes 1")
 	}
 	if o.Bridges == "none" {
 		return b.String(), nil

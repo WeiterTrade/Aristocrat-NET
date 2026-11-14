@@ -25,11 +25,11 @@ import java.util.TreeMap;
 
 /** Настройки: маршрут, запасной путь (WARP/Tor), мосты Tor, приложения мимо «Обхода», журнал. */
 public class SettingsActivity extends Activity {
-    private Spinner route, heavy, bridges;
-    private View customBox, bridgesLabel, heavyLabel;
+    private Spinner route, heavy, bridges, country;
+    private View customBox, bridgesLabel, heavyLabel, countryLabel;
     private EditText custom;
     private TextView log, torLine;
-    private String[] routeValues, heavyValues, bridgeValues;
+    private String[] routeValues, heavyValues, bridgeValues, countryValues;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private final Runnable tick = new Runnable() {
@@ -56,6 +56,8 @@ public class SettingsActivity extends Activity {
         route = findViewById(R.id.route);
         bridges = findViewById(R.id.bridges);
         heavy = findViewById(R.id.heavy);
+        country = findViewById(R.id.country);
+        countryLabel = findViewById(R.id.countryLabel);
         heavyLabel = findViewById(R.id.heavyLabel);
         bridgesLabel = findViewById(R.id.bridgesLabel);
         customBox = findViewById(R.id.customBox);
@@ -65,6 +67,8 @@ public class SettingsActivity extends Activity {
         routeValues = getResources().getStringArray(R.array.route_values);
         bridgeValues = getResources().getStringArray(R.array.bridge_values);
         heavyValues = getResources().getStringArray(R.array.heavy_values);
+        countryValues = getResources().getStringArray(R.array.country_values);
+        country.setSelection(Math.max(0, Arrays.asList(countryValues).indexOf(Prefs.torCountry(this))));
         heavy.setSelection(Math.max(0, Arrays.asList(heavyValues).indexOf(Prefs.heavy(this))));
 
         route.setSelection(Math.max(0, Arrays.asList(routeValues).indexOf(Prefs.route(this))));
@@ -74,6 +78,9 @@ public class SettingsActivity extends Activity {
 
         route.setOnItemSelectedListener(new Picked() {
             @Override void picked(int pos) { save("route", routeValues[pos]); }
+        });
+        country.setOnItemSelectedListener(new Picked() {
+            @Override void picked(int pos) { save("country", countryValues[pos]); }
         });
         heavy.setOnItemSelectedListener(new Picked() {
             @Override void picked(int pos) { save("heavy", heavyValues[pos]); }
@@ -182,6 +189,8 @@ public class SettingsActivity extends Activity {
         boolean tor = Prefs.needTor(this);
         bridges.setVisibility(tor ? View.VISIBLE : View.GONE);
         bridgesLabel.setVisibility(tor ? View.VISIBLE : View.GONE);
+        country.setVisibility(tor ? View.VISIBLE : View.GONE);
+        countryLabel.setVisibility(tor ? View.VISIBLE : View.GONE);
         customBox.setVisibility(tor && "custom".equals(Prefs.bridges(this)) ? View.VISIBLE : View.GONE);
     }
 

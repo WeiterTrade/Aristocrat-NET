@@ -119,6 +119,8 @@
     <div id="torBox">
       <div class="opt"><div class="l">Мосты Tor<br><span class="hint">Как подключаться к Tor (в РФ/РК без мостов он заблокирован)</span></div>
         <select id="bridges"></select></div>
+      <div class="opt"><div class="l">Страна IP через Tor<br><span class="hint">Сайты увидят IP из этой страны (режим «Всё через Tor»; WARP страну не меняет)</span></div>
+        <select id="country"></select></div>
       <div id="customBox" class="hidden" style="margin-top:8px">
         <textarea id="custom" rows="4" spellcheck="false" placeholder="Строки мостов obfs4 или webtunnel, по одной в строке. Получить: Telegram-бот @GetBridgesBot"></textarea>
         <button class="btn ghost" id="saveCustom" style="margin-top:6px">Сохранить мосты</button>
@@ -214,8 +216,8 @@ function render(s) {
   if (lastOn !== s.on) { lastOn = s.on; loadIP(); }
 
   // настройки
-  fill('route', s.routes); fill('heavy', s.heavies); fill('bridges', s.bridges); fill('mode', [{ id: 'auto', name: 'Авто' }].concat(s.strategies));
-  $('route').value = st.route; $('heavy').value = st.heavy; $('bridges').value = st.bridges; $('mode').value = st.mode;
+  fill('route', s.routes); fill('heavy', s.heavies); fill('bridges', s.bridges); fill('country', s.countries); fill('mode', [{ id: 'auto', name: 'Авто' }].concat(s.strategies));
+  $('route').value = st.route; $('heavy').value = st.heavy; $('bridges').value = st.bridges; $('country').value = st.tor_country || ''; $('mode').value = st.mode;
   $('heavyBox').classList.toggle('hidden', st.route !== 'auto');
   $('torBox').classList.toggle('hidden', !(st.route === 'tor' || (st.route === 'auto' && st.heavy !== 'warp')));
   $('customBox').classList.toggle('hidden', st.bridges !== 'custom');
@@ -276,6 +278,7 @@ $('route').onchange = e => save({ route: e.target.value });
 $('heavy').onchange = e => save({ heavy: e.target.value });
 $('mode').onchange = e => save({ mode: e.target.value });
 $('bridges').onchange = e => save({ bridges: e.target.value });
+$('country').onchange = e => save({ tor_country: e.target.value });
 $('saveCustom').onclick = () => save({ custom_bridges: $('custom').value });
 $('doh').onchange = e => save({ doh: e.target.value });
 $('sys').onchange = e => save({ sys_proxy: e.target.checked });

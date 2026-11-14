@@ -1150,6 +1150,10 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 	st := u.a.settings()
 	routeIDs := []string{RouteAuto, RouteDPI, RouteWarp, RouteTor}
 	routeNames := []string{RouteNames[RouteAuto], RouteNames[RouteDPI], RouteNames[RouteWarp], RouteNames[RouteTor]}
+	countryNames := make([]string, len(torCountryOrder))
+	for i, c := range torCountryOrder {
+		countryNames[i] = TorCountries[c]
+	}
 	heavyNames := make([]string, len(heavyOrder))
 	for i, h := range heavyOrder {
 		heavyNames[i] = HeavyNames[h]
@@ -1168,7 +1172,7 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 
 	var (
 		cbRoute, cbStrat, cbBridges, cbDoH *walk.ComboBox
-		cbHeavy                            *walk.ComboBox
+		cbHeavy, cbCountry                 *walk.ComboBox
 		teCustom, teTest, teSites, teLog   *walk.TextEdit
 		btnTest                            *walk.PushButton
 		leHost                             *walk.LineEdit
@@ -1185,6 +1189,7 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 		s := u.a.settings()
 		s.Route = routeIDs[cbRoute.CurrentIndex()]
 		s.Heavy = heavyOrder[cbHeavy.CurrentIndex()]
+		s.TorCountry = torCountryOrder[cbCountry.CurrentIndex()]
 		s.Mode = stratIDs[cbStrat.CurrentIndex()]
 		s.Bridges = bridgeOrder[cbBridges.CurrentIndex()]
 		s.DoH = dohIDs[cbDoH.CurrentIndex()]
@@ -1193,6 +1198,7 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 		s.Port = int(nePort.Value())
 		_, needTor := s.needs()
 		cbBridges.SetEnabled(needTor)
+		cbCountry.SetEnabled(needTor)
 		cbHeavy.SetEnabled(s.Route == RouteAuto)
 		go func() {
 			if err := u.a.applySettings(s); err != nil {
@@ -1295,6 +1301,10 @@ func (u *nativeUI) settingsWidgets() []dcl.Widget {
 				dcl.Label{Text: "Мосты Tor:"},
 				dcl.ComboBox{AssignTo: &cbBridges, Model: bridgeNames, CurrentIndex: indexOf(bridgeOrder, st.Bridges), OnCurrentIndexChanged: apply,
 					Enabled: func() bool { _, t := st.needs(); return t }()},
+				dcl.Label{Text: "Страна IP через Tor:"},
+				dcl.ComboBox{AssignTo: &cbCountry, Model: countryNames, CurrentIndex: indexOf(torCountryOrder, st.TorCountry), OnCurrentIndexChanged: apply,
+					Enabled: func() bool { _, t := st.needs(); return t }()},
+				dcl.Label{ColumnSpan: 2, Text: "Сайты увидят IP из выбранной страны. Нужен режим «Всё через Tor» (в режиме «Авто» — только для сайтов, открытых через Tor). WARP страну не меняет.", TextColor: cMuted.walk()},
 				dcl.Label{ColumnSpan: 2, Text: "Свои мосты (WebTunnel / obfs4 из Telegram-бота @GetBridgesBot), по одному в строке.\nИспользуются в режимах «Свои мосты» и «Автовыбор»:", TextColor: cMuted.walk()},
 				dcl.TextEdit{AssignTo: &teCustom, ColumnSpan: 2, MinSize: dcl.Size{Height: 64}, VScroll: true,
 					Text: strings.ReplaceAll(st.CustomBridges, "\n", "\r\n"), Font: dcl.Font{Family: "Consolas", PointSize: 8}},

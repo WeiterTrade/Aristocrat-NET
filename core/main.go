@@ -33,7 +33,7 @@ import (
 
 const appName = "Obhod"
 
-var appVersion = "0.6.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.6.1" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -56,6 +56,7 @@ type Settings struct {
 	Heavy         string            `json:"heavy"` // запасной путь в режиме «Авто»: warp-tor | warp | tor
 	Bridges       string            `json:"bridges"`
 	CustomBridges string            `json:"custom_bridges"`
+	TorCountry    string            `json:"tor_country"` // страна выхода из Tor; пусто — любая
 	SysProxy      bool              `json:"sys_proxy"`
 	DoH           string            `json:"doh"`
 	AutoStart     bool              `json:"auto_start"`
@@ -86,6 +87,9 @@ func (s *Settings) normalize() {
 	}
 	if BridgeNames[s.Bridges] == "" {
 		s.Bridges = d.Bridges
+	}
+	if TorCountries[s.TorCountry] == "" {
+		s.TorCountry = ""
 	}
 	if DoHServers[s.DoH] == "" {
 		s.DoH = d.DoH
@@ -151,7 +155,7 @@ func (a *App) save() {
 // startTor запускает встроенный tor (на ПК).
 func (a *App) startTor() {
 	a.mu.Lock()
-	bridges, custom := a.s.Bridges, a.s.CustomBridges
+	bridges, custom, country := a.s.Bridges, a.s.CustomBridges, a.s.TorCountry
 	a.mu.Unlock()
 	a.torErr = ""
 	paths, err := FindTor()
@@ -187,7 +191,7 @@ func (a *App) startTor() {
 	}
 	torrc, err := BuildTorrc(TorOptions{
 		Bridges: bridges, Custom: custom, SocksAddr: socks, DataDir: "tor-data",
-		PTConfigPath: paths.PTConfig, PTDir: ptDir, WorkDir: a.dir, GeoIPDir: geoDir,
+		PTConfigPath: paths.PTConfig, PTDir: ptDir, WorkDir: a.dir, GeoIPDir: geoDir, ExitCountry: country,
 	})
 	if err != nil {
 		a.torErr = err.Error()
@@ -218,7 +222,7 @@ func (a *App) applySettings(s Settings) error {
 	a.mu.Lock()
 	old := a.s
 	a.s.Port, a.s.Mode, a.s.Route, a.s.SysProxy, a.s.DoH, a.s.AutoStart = s.Port, s.Mode, s.Route, s.SysProxy, s.DoH, s.AutoStart
-	a.s.Bridges, a.s.CustomBridges, a.s.Heavy = s.Bridges, s.CustomBridges, s.Heavy
+	a.s.Bridges, a.s.CustomBridges, a.s.Heavy, a.s.TorCountry = s.Bridges, s.CustomBridges, s.Heavy, s.TorCountry
 	a.mu.Unlock()
 	a.eng.Mode.Store(s.Mode)
 	a.eng.Route.Store(s.Route)
@@ -229,7 +233,7 @@ func (a *App) applySettings(s Settings) error {
 			a.disable()
 			return a.enable()
 		}
-		torChanged := s.Bridges != old.Bridges || s.CustomBridges != old.CustomBridges
+		torChanged := s.Bridges != old.Bridges || s.CustomBridges != old.CustomBridges || s.TorCountry != old.TorCountry
 		a.startUpstreams(torChanged)
 	}
 	return nil
@@ -421,6 +425,7 @@ func (a *App) state() map[string]any {
 		"strategies": kv(AutoOrder, StratNames),
 		"routes":     kv([]string{RouteAuto, RouteDPI, RouteWarp, RouteTor}, RouteNames),
 		"heavies":    kv(heavyOrder, HeavyNames),
+		"countries":  kv(torCountryOrder, TorCountries),
 		"up_lines":   upLines,
 		"up_warns":   upWarns,
 		"summary":    summary,
@@ -572,6 +577,8 @@ func main() {
 		portFlag   = flag.Int("port", 0, "порт прокси (по умолчанию из настроек, 8881)")
 		routeFlag  = flag.String("route", "", "маршрут: auto | dpi | warp | tor")
 		heavyFlag  = flag.String("heavy", "", "запасной путь в режиме auto: warp-tor | warp | tor")
+		torCountry = flag.String("tor-country", "", "страна выхода из Tor: de, nl, us… или any")
+		geoipDir   = flag.String("geoip-dir", "", "папка с файлами geoip/geoip6 (Android)")
 		torLog     = flag.String("tor-log", "", "журнал внешнего Tor (Android): torrc пишет его, ядро читает")
 		stratFlag  = flag.String("strategy", "", "метод обхода DPI: auto | tlsrec | split | ...")
 		dohFlag    = flag.String("doh", "", "DoH: cloudflare | google | quad9")
@@ -613,6 +620,11 @@ func main() {
 	if *bridges != "" {
 		a.s.Bridges = *bridges
 	}
+	if *torCountry == "any" {
+		a.s.TorCountry = ""
+	} else if *torCountry != "" {
+		a.s.TorCountry = *torCountry
+	}
 	if *customFile != "" {
 		if b, err := os.ReadFile(*customFile); err == nil {
 			a.s.CustomBridges = string(b)
@@ -623,7 +635,8 @@ func main() {
 	// Android: приложение просит собрать torrc для TorService.
 	if *writeTorrc != "" {
 		torrc, err := BuildTorrc(TorOptions{Bridges: a.s.Bridges, Custom: a.s.CustomBridges, SocksAddr: torSocksAddr,
-			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true, LogFile: *torLog})
+			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true, LogFile: *torLog,
+			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "torrc:", err)
 			os.Exit(1)

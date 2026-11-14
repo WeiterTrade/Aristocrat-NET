@@ -329,3 +329,23 @@ func TestAutoBridges(t *testing.T) {
 		t.Error("свои мосты должны идти первыми")
 	}
 }
+
+// Страна выхода: ExitNodes и StrictNodes, только при наличии GeoIP.
+func TestTorExitCountry(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := BuildTorrc(TorOptions{Bridges: "none", SocksAddr: "127.0.0.1:9", DataDir: "d", ExitCountry: "de"}); err == nil {
+		t.Fatal("без GeoIP страна выхода должна давать понятную ошибку")
+	}
+	os.WriteFile(filepath.Join(dir, "geoip"), []byte("x"), 0o600)
+	rc, err := BuildTorrc(TorOptions{Bridges: "none", SocksAddr: "127.0.0.1:9", ForAndroid: true, GeoIPDir: dir, ExitCountry: "DE"})
+	if err != nil || !strings.Contains(rc, "ExitNodes {de}") || !strings.Contains(rc, "StrictNodes 1") || !strings.Contains(rc, "GeoIPFile "+filepath.Join(dir, "geoip")) {
+		t.Fatalf("%v\n%s", err, rc)
+	}
+	if _, err := BuildTorrc(TorOptions{Bridges: "none", GeoIPDir: dir, ExitCountry: "xx"}); err == nil {
+		t.Fatal("неизвестная страна должна отклоняться")
+	}
+	rc, _ = BuildTorrc(TorOptions{Bridges: "none", SocksAddr: "127.0.0.1:9", DataDir: "d"})
+	if strings.Contains(rc, "ExitNodes") {
+		t.Fatal("без выбора страны ExitNodes не нужен")
+	}
+}

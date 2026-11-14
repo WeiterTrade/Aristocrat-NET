@@ -35,6 +35,9 @@ final class Prefs {
     /** Запасной путь в режиме «Авто»: warp-tor | warp | tor. */
     static String heavy(Context c) { return get(c).getString("heavy", "warp-tor"); }
 
+    /** Страна выхода из Tor: any или код ISO (de, nl, us…). */
+    static String torCountry(Context c) { return get(c).getString("country", "any"); }
+
     static String bridges(Context c) { return get(c).getString("bridges", "auto"); }
 
     static String custom(Context c) { return get(c).getString("custom", ""); }

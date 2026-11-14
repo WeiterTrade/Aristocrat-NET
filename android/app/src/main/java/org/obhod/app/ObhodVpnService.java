@@ -290,6 +290,17 @@ public class ObhodVpnService extends VpnService {
     private void writeTorrc(File coreBin, File lyrebird, File data, File torLog) throws Exception {
         File pt = new File(data, "pt_config.json");
         copyAsset("pt_config.json", pt);
+        // Файлы GeoIP нужны tor для выбора страны выхода.
+        File geo = new File(data, "geoip-data");
+        //noinspection ResultOfMethodCallIgnored
+        geo.mkdirs();
+        for (String g : new String[]{"geoip", "geoip6"}) {
+            try {
+                copyAsset(g, new File(geo, g));
+            } catch (IOException e) {
+                log("Нет файла " + g + " — выбор страны Tor недоступен");
+            }
+        }
         File custom = new File(data, "custom_bridges.txt");
         try (FileWriter w = new FileWriter(custom)) {
             w.write(Prefs.custom(this));
@@ -304,7 +315,9 @@ public class ObhodVpnService extends VpnService {
                 "-custom-bridges", custom.getAbsolutePath(),
                 "-pt-config", pt.getAbsolutePath(),
                 "-lyrebird", lyrebird.getAbsolutePath(),
-                "-tor-log", torLog.getAbsolutePath())
+                "-tor-log", torLog.getAbsolutePath(),
+                "-tor-country", Prefs.torCountry(this),
+                "-geoip-dir", geo.getAbsolutePath())
                 .redirectErrorStream(true).start();
         String out = readAll(p.getInputStream());
         if (p.waitFor() != 0) {
