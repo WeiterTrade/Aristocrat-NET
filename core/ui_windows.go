@@ -307,17 +307,31 @@ func scaleRGBA(src image.Image, px int) *image.RGBA {
 }
 
 // roundRect — сглаженный прямоугольник со скруглёнными углами и обводкой.
+// Внутренняя часть заливается напрямую, сглаживание считается только у краёв и в углах
+// (иначе на развёрнутом окне рисование заметно тормозило).
 func roundRect(img *image.RGBA, r walk.Rectangle, rad float64, fill, stroke rgb) {
+	roundRectFill(img, r, rad, func(int) rgb { return fill }, stroke)
+}
+
+func roundRectFill(img *image.RGBA, r walk.Rectangle, rad float64, fillAt func(y int) rgb, stroke rgb) {
 	b := img.Bounds()
 	cx := float64(r.X) + float64(r.Width)/2
 	cy := float64(r.Y) + float64(r.Height)/2
 	hw, hh := float64(r.Width)/2, float64(r.Height)/2
+	ri := int(math.Ceil(rad)) + 2
 	for y := r.Y - 1; y <= r.Y+r.Height; y++ {
 		if y < b.Min.Y || y >= b.Max.Y {
 			continue
 		}
+		fill := fillAt(y)
+		inRow := y >= r.Y+ri && y < r.Y+r.Height-ri // строка без углов
 		for x := r.X - 1; x <= r.X+r.Width; x++ {
 			if x < b.Min.X || x >= b.Max.X {
+				continue
+			}
+			if (inRow && x >= r.X+2 && x < r.X+r.Width-2) || (x >= r.X+ri && x < r.X+r.Width-ri && y >= r.Y+2 && y < r.Y+r.Height-2) {
+				i := img.PixOffset(x, y)
+				img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = fill.r, fill.g, fill.b, 255
 				continue
 			}
 			qx := math.Abs(float64(x)+0.5-cx) - (hw - rad)
@@ -331,6 +345,18 @@ func roundRect(img *image.RGBA, r walk.Rectangle, rad float64, fill, stroke rgb)
 			}
 		}
 	}
+}
+
+// copySky кладёт в img фон с лучами из кэша (сам фон считается заново только при смене размера).
+func (u *nativeUI) copySky(img *image.RGBA, cx, cy int) {
+	b := img.Bounds()
+	key := [4]int{b.Dx(), b.Dy(), cx, cy}
+	if u.skyImg == nil || u.skyKey != key {
+		u.skyImg = image.NewRGBA(b)
+		sky(u.skyImg, float64(cx), float64(cy))
+		u.skyKey = key
+	}
+	copy(img.Pix, u.skyImg.Pix)
 }
 
 func circleShape(img *image.RGBA, r walk.Rectangle, fill, stroke rgb) {
@@ -374,6 +400,10 @@ type nativeUI struct {
 
 	scene    *walk.Bitmap
 	sceneKey sceneKey
+	skyImg   *image.RGBA // фон главного экрана (пересчитывается только при смене размера)
+	skyKey   [4]int
+	setBg    *image.RGBA // фон настроек
+	setBgKey [2]int
 	logoImg  image.Image
 	brandImg image.Image
 	logoBmp  map[string]*walk.Bitmap
@@ -508,8 +538,23 @@ func (u *nativeUI) build() error {
 				OnMouseDown:         u.settingsDown,
 				OnMouseMove:         u.settingsMove,
 				OnKeyDown: func(key walk.Key) {
-					if key == walk.KeyEscape {
+					s := u.dpiScale()
+					page := u.setPane.ClientBoundsPixels().Height - int(60*s)
+					switch key {
+					case walk.KeyEscape, walk.KeyBack:
 						u.goBack()
+					case walk.KeyDown:
+						u.scrollBy(int(48 * s))
+					case walk.KeyUp:
+						u.scrollBy(-int(48 * s))
+					case walk.KeyNext:
+						u.scrollBy(page)
+					case walk.KeyPrior:
+						u.scrollBy(-page)
+					case walk.KeyHome:
+						u.scrollBy(-1 << 30)
+					case walk.KeyEnd:
+						u.scrollBy(1 << 30)
 					}
 				},
 			},
@@ -532,9 +577,14 @@ func (u *nativeUI) build() error {
 		_ = u.mw.SetIcon(icon)
 	}
 	u.styleNatives()
-	u.setPane.MouseWheel().Attach(func(x, y int, b walk.MouseButton) {
-		u.scrollBy(-int(int16(uint32(b)>>16)) * int(48*u.dpiScale()) / 120)
-	})
+	wheel := func(x, y int, b walk.MouseButton) {
+		if u.view == viewSettings {
+			u.scrollBy(-int(int16(uint32(b)>>16)) * int(48*u.dpiScale()) / 120)
+		}
+	}
+	u.setPane.MouseWheel().Attach(wheel)
+	u.mw.MouseWheel().Attach(wheel) // если фокус у самого окна
+	u.home.MouseWheel().Attach(wheel)
 
 	// Закрытие окна (Alt+F4, кнопка ✕) — сворачивание в трей.
 	u.mw.Closing().Attach(func(canceled *bool, reason walk.CloseReason) {
@@ -938,14 +988,14 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	if u.scene == nil || key != u.sceneKey {
 		img := image.NewRGBA(image.Rect(0, 0, b.Width, b.Height))
 		if u.view == viewHome {
-			sky(img, float64(u.rBtn.X+u.rBtn.Width/2), float64(u.rBtn.Y+u.rBtn.Height/2))
+			u.copySky(img, u.rBtn.X+u.rBtn.Width/2, u.rBtn.Y+u.rBtn.Height/2)
 			planet(img, u.rBtn, int(16*s), state != "off", state == "busy")
 			roundRect(img, u.rPill, float64(pillH)/2, cCard, cPillLine)
 			circleShape(img, u.rGear, cCard, cLine)
 		} else {
 			lp := int(210 * s)
 			ly := int(16 * s)
-			sky(img, float64(b.Width)/2, float64(ly+lp/2))
+			u.copySky(img, b.Width/2, ly+lp/2)
 			if u.brandImg != nil {
 				logo := scaleRGBA(u.brandImg, lp)
 				x0 := (b.Width - lp) / 2

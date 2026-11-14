@@ -594,30 +594,9 @@ func (u *nativeUI) scrollBy(d int) {
 // Рисование
 
 func roundRectGrad(img *image.RGBA, r walk.Rectangle, rad float64, top, bottom, stroke rgb) {
-	b := img.Bounds()
-	cx := float64(r.X) + float64(r.Width)/2
-	cy := float64(r.Y) + float64(r.Height)/2
-	hw, hh := float64(r.Width)/2, float64(r.Height)/2
-	for y := r.Y - 1; y <= r.Y+r.Height; y++ {
-		if y < b.Min.Y || y >= b.Max.Y {
-			continue
-		}
-		fill := lerp(top, bottom, clamp01(float64(y-r.Y)/float64(r.Height)))
-		for x := r.X - 1; x <= r.X+r.Width; x++ {
-			if x < b.Min.X || x >= b.Max.X {
-				continue
-			}
-			qx := math.Abs(float64(x)+0.5-cx) - (hw - rad)
-			qy := math.Abs(float64(y)+0.5-cy) - (hh - rad)
-			out := math.Hypot(math.Max(qx, 0), math.Max(qy, 0)) + math.Min(math.Max(qx, qy), 0) - rad
-			if a := clamp01(0.5 - out); a > 0 {
-				fillPx(img, x, y, stroke, a)
-			}
-			if a := clamp01(-0.5 - out); a > 0 {
-				fillPx(img, x, y, fill, a)
-			}
-		}
-	}
+	roundRectFill(img, r, rad, func(y int) rgb {
+		return lerp(top, bottom, clamp01(float64(y-r.Y)/float64(r.Height)))
+	}, stroke)
 }
 
 func shift(r walk.Rectangle, dy int) walk.Rectangle { r.Y -= dy; return r }
@@ -637,14 +616,18 @@ func (u *nativeUI) paintSettings(c *walk.Canvas, _ walk.Rectangle) error {
 	s := u.dpiScale()
 	sc := u.scroll
 	img := image.NewRGBA(image.Rect(0, 0, b.Width, b.Height))
-	// фон: тёмный с лёгким синим свечением сверху
-	for y := 0; y < b.Height; y++ {
-		col := lerp(cBgGrad, cBg, clamp01(float64(y)/float64(b.Height)*1.6))
-		for x := 0; x < b.Width; x++ {
-			i := img.PixOffset(x, y)
-			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = col.r, col.g, col.b, 255
+	// фон: тёмный с лёгким синим свечением сверху (считается один раз на размер окна)
+	if k := [2]int{b.Width, b.Height}; u.setBg == nil || u.setBgKey != k {
+		u.setBg, u.setBgKey = image.NewRGBA(img.Bounds()), k
+		for y := 0; y < b.Height; y++ {
+			col := lerp(cBgGrad, cBg, clamp01(float64(y)/float64(b.Height)*1.6))
+			for x := 0; x < b.Width; x++ {
+				i := u.setBg.PixOffset(x, y)
+				u.setBg.Pix[i], u.setBg.Pix[i+1], u.setBg.Pix[i+2], u.setBg.Pix[i+3] = col.r, col.g, col.b, 255
+			}
 		}
 	}
+	copy(img.Pix, u.setBg.Pix)
 	rad := 12 * s
 	var cardTop int
 	for i, it := range u.setItems {
@@ -783,6 +766,16 @@ func (u *nativeUI) paintSettings(c *walk.Canvas, _ walk.Rectangle) error {
 			}
 		}
 	}
+	// полоса прокрутки (когда страница длиннее окна)
+	if u.contentH > b.Height {
+		trackH := b.Height - int(16*s)
+		barH := int(math.Max(float64(trackH)*float64(b.Height)/float64(u.contentH), 30*s))
+		maxScroll := u.contentH - b.Height
+		barY := int(8*s) + int(float64(trackH-barH)*float64(sc)/float64(maxScroll))
+		gb, _ := walk.NewSolidColorBrush(cSteel.walk())
+		_ = c.FillRectanglePixels(gb, walk.Rectangle{X: b.Width - int(6*s), Y: barY, Width: int(3 * s), Height: barH})
+		gb.Dispose()
+	}
 	// всплывающее сообщение («Скопировано»)
 	if u.toast != "" && time.Since(u.toastAt) < 2*time.Second {
 		f := u.txt.font("Segoe UI Semibold", int(13*s), false)
@@ -834,6 +827,19 @@ func (u *nativeUI) settingsDown(x, y int, button walk.MouseButton) {
 }
 
 func (u *nativeUI) settingsMove(x, y int, _ walk.MouseButton) {
+	// Колёсико мыши в Windows 7 приходит окну с фокусом: забираем фокус, когда курсор над
+	// страницей (если только пользователь не печатает в поле ввода).
+	if f := win.GetFocus(); f != u.setPane.Handle() {
+		typing := false
+		for _, n := range u.allNatives() {
+			if n.Handle() == f {
+				typing = true
+			}
+		}
+		if !typing {
+			win.SetFocus(u.setPane.Handle())
+		}
+	}
 	if u.hover != 0 {
 		u.hover = 0
 		u.title.Invalidate()
