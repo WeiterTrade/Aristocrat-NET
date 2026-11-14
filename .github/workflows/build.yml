@@ -190,11 +190,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
-      - name: Встроенные мосты Tor (pt_config.json)
+      - name: Встроенные мосты Tor и GeoIP
         run: |
           bash scripts/fetch-tor.sh android-aarch64 build/tor-android || bash scripts/fetch-tor.sh linux-x86_64 build/tor-android
           mkdir -p android/app/src/main/assets
           cp build/tor-android/pt/pt_config.json android/app/src/main/assets/
+          # GeoIP — для выбора страны выхода из Tor.
+          cp build/tor-android/data/geoip build/tor-android/data/geoip6 android/app/src/main/assets/ || echo "Нет GeoIP — выбор страны Tor на Android будет недоступен"
       - name: Android NDK r27 (с ним проверен hev-socks5-tunnel)
         run: |
           NDKV=27.2.12479018
