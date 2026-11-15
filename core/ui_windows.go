@@ -398,8 +398,10 @@ type nativeUI struct {
 	hover    int // кнопка заголовка под курсором: 0 — нет, 1 свернуть, 2 развернуть, 3 закрыть, 4 назад
 	lastDown time.Time
 
-	scene    *walk.Bitmap
+	sceneImg *image.RGBA // фон и фигуры главного экрана (пересчитываются только при изменениях)
 	sceneKey sceneKey
+	homeOff  offscreen
+	setOff   offscreen
 	skyImg   *image.RGBA // фон главного экрана (пересчитывается только при смене размера)
 	skyKey   [4]int
 	setBg    *image.RGBA // фон настроек
@@ -407,7 +409,7 @@ type nativeUI struct {
 	logoImg  image.Image
 	brandImg image.Image
 	logoBmp  map[string]*walk.Bitmap
-	flagBmp  *walk.Bitmap
+	flagImg  image.Image
 
 	// области щелчков (пиксели)
 	rBtn, rGear, rAbout, rPill walk.Rectangle
@@ -509,7 +511,7 @@ func (u *nativeUI) build() error {
 				AssignTo:            &u.title,
 				PaintPixels:         u.paintTitle,
 				InvalidatesOnResize: true,
-				DoubleBuffering:     true,
+				PaintMode:           dcl.PaintBuffered, // без стирания фона (иначе мигает)
 				OnMouseDown:         u.titleDown,
 				OnMouseMove:         u.titleMove,
 			},
@@ -517,7 +519,7 @@ func (u *nativeUI) build() error {
 				AssignTo:            &u.home,
 				PaintPixels:         u.paintHome,
 				InvalidatesOnResize: true,
-				DoubleBuffering:     true,
+				PaintMode:           dcl.PaintNoErase, // рисуем сами через постоянный буфер — без мигания
 				OnMouseDown:         u.homeDown,
 				OnMouseMove:         u.homeMove,
 				OnKeyDown: func(key walk.Key) {
@@ -534,7 +536,7 @@ func (u *nativeUI) build() error {
 				Visible:             false,
 				PaintPixels:         u.paintSettings,
 				InvalidatesOnResize: true,
-				DoubleBuffering:     true,
+				PaintMode:           dcl.PaintNoErase, // рисуем сами через постоянный буфер — без мигания
 				OnMouseDown:         u.settingsDown,
 				OnMouseMove:         u.settingsMove,
 				OnKeyDown: func(key walk.Key) {
@@ -939,11 +941,17 @@ func (u *nativeUI) layout(w, h int) {
 
 func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	b := u.home.ClientBoundsPixels()
-	if b.Width <= 0 || b.Height <= 0 {
+	if !u.homeOff.ensure(b.Width, b.Height) {
 		return nil
 	}
+	u.drawHome(&u.homeOff, b)
+	u.homeOff.blit(c)
+	return nil
+}
+
+func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 	s := u.dpiScale()
-	hdc := c.HDC()
+	hdc := o.dc
 	u.layout(b.Width, b.Height)
 
 	on := u.a.eng.Running()
@@ -971,7 +979,7 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	}
 	tw, th := u.txt.measure(hdc, ipText, fIP)
 	fw, fh, gap := 0, 0, 0
-	if u.flagBmp != nil && ip != "" && ip != "…" {
+	if u.flagImg != nil && ip != "" && ip != "…" {
 		fw, fh, gap = int(24*s), int(18*s), int(10*s)
 	} else if cc != "" && ip != "" && ip != "…" {
 		ipText = cc + "   " + ip
@@ -985,8 +993,11 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 
 	// Фон и фигуры — одной сглаженной картинкой (пересчитывается только при изменениях).
 	key := sceneKey{w: b.Width, h: b.Height, state: state, view: u.view, pill: u.rPill, gear: u.rGear, btn: u.rBtn}
-	if u.scene == nil || key != u.sceneKey {
-		img := image.NewRGBA(image.Rect(0, 0, b.Width, b.Height))
+	if u.sceneImg == nil || key != u.sceneKey {
+		img := u.sceneImg
+		if img == nil || img.Bounds().Dx() != b.Width || img.Bounds().Dy() != b.Height {
+			img = image.NewRGBA(image.Rect(0, 0, b.Width, b.Height))
+		}
 		if u.view == viewHome {
 			u.copySky(img, u.rBtn.X+u.rBtn.Width/2, u.rBtn.Y+u.rBtn.Height/2)
 			planet(img, u.rBtn, int(16*s), state != "off", state == "busy")
@@ -1002,20 +1013,17 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 				draw.Draw(img, image.Rect(x0, ly, x0+lp, ly+lp), logo, image.Point{}, draw.Over)
 			}
 		}
-		if bmp, err := walk.NewBitmapFromImageForDPI(img, 96); err == nil {
-			if u.scene != nil {
-				u.scene.Dispose()
-			}
-			u.scene, u.sceneKey = bmp, key
-		}
+		u.sceneImg, u.sceneKey = img, key
 	}
-	if u.scene != nil {
-		_ = c.DrawImagePixels(u.scene, walk.Point{})
+	copy(o.img.Pix, u.sceneImg.Pix)
+	if u.view == viewHome && fw > 0 {
+		drawImageScaled(o.img, u.flagImg, walk.Rectangle{X: u.rPill.X + padX, Y: pillY + (pillH-fh)/2, Width: fw, Height: fh})
 	}
+	o.upload()
 
 	if u.view == viewAbout {
-		u.paintAbout(c, hdc, b, s)
-		return nil
+		u.paintAbout(hdc, b, s)
+		return
 	}
 
 	// «О программе»
@@ -1054,7 +1062,6 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	// Плашка: флаг и IP — по центру под кнопкой
 	x := u.rPill.X + padX
 	if fw > 0 {
-		_ = c.DrawImageStretchedPixels(u.flagBmp, walk.Rectangle{X: x, Y: pillY + (pillH-fh)/2, Width: fw, Height: fh})
 		x += fw + gap
 	}
 	u.txt.draw(hdc, ipText, fIP, cText, walk.Rectangle{X: x, Y: pillY + (pillH-th)/2, Width: tw + 2, Height: th}, dtLeft|dtSingle)
@@ -1080,10 +1087,9 @@ func (u *nativeUI) paintHome(c *walk.Canvas, _ walk.Rectangle) error {
 	u.txt.draw(hdc, "⚙", u.txt.font("Segoe UI Symbol", int(23*s), false), cLight, u.rGear, dtCenter|dtVCenter|dtSingle)
 	u.txt.draw(hdc, "v"+appVersion, u.txt.font("Segoe UI", int(11*s), false), cOnSkySub,
 		walk.Rectangle{X: 0, Y: u.rGear.Y, Width: b.Width - int(16*s), Height: u.rGear.Height}, dtRight|dtVCenter|dtSingle)
-	return nil
 }
 
-func (u *nativeUI) paintAbout(c *walk.Canvas, hdc win.HDC, b walk.Rectangle, s float64) {
+func (u *nativeUI) paintAbout(hdc win.HDC, b walk.Rectangle, s float64) {
 	y := int(16*s) + int(210*s) + int(8*s)
 	u.txt.draw(hdc, "версия "+appVersion, u.txt.font("Segoe UI", int(13*s), false), cGoldLight,
 		walk.Rectangle{Y: y, Width: b.Width, Height: int(20 * s)}, dtCenter|dtSingle)
@@ -1233,16 +1239,7 @@ func (u *nativeUI) loadIP() {
 		u.mu.Lock()
 		u.ip, u.cc = ip, cc
 		if img != nil {
-			// флаг на белом фоне плашки, без прозрачности
-			dst := image.NewRGBA(img.Bounds())
-			draw.Draw(dst, dst.Bounds(), &image.Uniform{cWhite.rgba(255)}, image.Point{}, draw.Src)
-			draw.Draw(dst, dst.Bounds(), img, img.Bounds().Min, draw.Over)
-			if bmp, err := walk.NewBitmapFromImageForDPI(dst, 96); err == nil {
-				if u.flagBmp != nil {
-					u.flagBmp.Dispose()
-				}
-				u.flagBmp, u.flagCC = bmp, cc
-			}
+			u.flagImg, u.flagCC = img, cc
 		}
 		u.mu.Unlock()
 		u.home.Invalidate()

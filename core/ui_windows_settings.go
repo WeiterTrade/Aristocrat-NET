@@ -603,9 +603,15 @@ func shift(r walk.Rectangle, dy int) walk.Rectangle { r.Y -= dy; return r }
 
 func (u *nativeUI) paintSettings(c *walk.Canvas, _ walk.Rectangle) error {
 	b := u.setPane.ClientBoundsPixels()
-	if b.Width <= 0 || b.Height <= 0 {
+	if !u.setOff.ensure(b.Width, b.Height) {
 		return nil
 	}
+	u.drawSettings(&u.setOff, b)
+	u.setOff.blit(c)
+	return nil
+}
+
+func (u *nativeUI) drawSettings(o *offscreen, b walk.Rectangle) {
 	if u.setItems == nil || u.lastPaneW != b.Width || u.lastPaneH != b.Height {
 		u.lastPaneW, u.lastPaneH = b.Width, b.Height
 		u.layoutPage()
@@ -615,7 +621,7 @@ func (u *nativeUI) paintSettings(c *walk.Canvas, _ walk.Rectangle) error {
 	}
 	s := u.dpiScale()
 	sc := u.scroll
-	img := image.NewRGBA(image.Rect(0, 0, b.Width, b.Height))
+	img := o.img
 	// фон: тёмный с лёгким синим свечением сверху (считается один раз на размер окна)
 	if k := [2]int{b.Width, b.Height}; u.setBg == nil || u.setBgKey != k {
 		u.setBg, u.setBgKey = image.NewRGBA(img.Bounds()), k
@@ -682,17 +688,33 @@ func (u *nativeUI) paintSettings(c *walk.Canvas, _ walk.Rectangle) error {
 			}
 		}
 	}
-	bmp, err := walk.NewBitmapFromImageForDPI(img, 96)
-	if err != nil {
-		return err
+	// разделители строк, полоса прокрутки и подложка сообщения — тоже в картинку
+	for _, it := range u.setItems {
+		if it.kind == kRow && !it.last {
+			r := shift(it.r, sc)
+			x := r.X + int(16*s)
+			fillRectImg(img, walk.Rectangle{X: x, Y: r.Y + r.Height - 1, Width: r.X + r.Width - x - int(1*s), Height: 1}, cLine)
+		}
 	}
-	_ = c.DrawImagePixels(bmp, walk.Point{})
-	bmp.Dispose()
+	if u.contentH > b.Height {
+		trackH := b.Height - int(16*s)
+		barH := int(math.Max(float64(trackH)*float64(b.Height)/float64(u.contentH), 30*s))
+		maxScroll := u.contentH - b.Height
+		barY := int(8*s) + int(float64(trackH-barH)*float64(sc)/float64(maxScroll))
+		roundRect(img, walk.Rectangle{X: b.Width - int(7*s), Y: barY, Width: int(4 * s), Height: barH}, 2*s, cSteel, cSteel)
+	}
+	var toastR walk.Rectangle
+	toastF := u.txt.font("Segoe UI Semibold", int(13*s), false)
+	showToast := u.toast != "" && time.Since(u.toastAt) < 2*time.Second
+	if showToast {
+		tw, th := u.txt.measure(o.dc, u.toast, toastF)
+		toastR = walk.Rectangle{X: (b.Width - tw - int(36*s)) / 2, Y: b.Height - th - int(40*s), Width: tw + int(36*s), Height: th + int(16*s)}
+		roundRect(img, toastR, float64(toastR.Height)/2, cGold, cGold)
+	}
+	o.upload()
 
-	hdc := c.HDC()
+	hdc := o.dc
 	fT, fS, fV, fSec, fB := u.fonts()
-	line, _ := walk.NewSolidColorBrush(cLine.walk())
-	defer line.Dispose()
 	for _, it := range u.setItems {
 		r := shift(it.r, sc)
 		switch it.kind {
@@ -761,32 +783,11 @@ func (u *nativeUI) paintSettings(c *walk.Canvas, _ walk.Rectangle) error {
 				u.txt.draw(hdc, it.title, fT, tcol, walk.Rectangle{X: x, Y: ty, Width: right - x, Height: int(20 * s)}, dtLeft|dtSingle|0x8000)
 				u.txt.draw(hdc, it.sub, fS, cSteel, walk.Rectangle{X: x, Y: ty + int(22*s), Width: right - x, Height: r.Height - int(36*s)}, dtWord)
 			}
-			if !it.last {
-				_ = c.FillRectanglePixels(line, walk.Rectangle{X: x, Y: r.Y + r.Height - 1, Width: r.X + r.Width - x - int(1*s), Height: 1})
-			}
 		}
 	}
-	// полоса прокрутки (когда страница длиннее окна)
-	if u.contentH > b.Height {
-		trackH := b.Height - int(16*s)
-		barH := int(math.Max(float64(trackH)*float64(b.Height)/float64(u.contentH), 30*s))
-		maxScroll := u.contentH - b.Height
-		barY := int(8*s) + int(float64(trackH-barH)*float64(sc)/float64(maxScroll))
-		gb, _ := walk.NewSolidColorBrush(cSteel.walk())
-		_ = c.FillRectanglePixels(gb, walk.Rectangle{X: b.Width - int(6*s), Y: barY, Width: int(3 * s), Height: barH})
-		gb.Dispose()
+	if showToast {
+		u.txt.draw(hdc, u.toast, toastF, cBg, toastR, dtCenter|dtVCenter|dtSingle)
 	}
-	// всплывающее сообщение («Скопировано»)
-	if u.toast != "" && time.Since(u.toastAt) < 2*time.Second {
-		f := u.txt.font("Segoe UI Semibold", int(13*s), false)
-		tw, th := u.txt.measure(hdc, u.toast, f)
-		tr := walk.Rectangle{X: (b.Width - tw - int(36*s)) / 2, Y: b.Height - th - int(40*s), Width: tw + int(36*s), Height: th + int(16*s)}
-		gb, _ := walk.NewSolidColorBrush(cGold.walk())
-		_ = c.FillRectanglePixels(gb, tr)
-		gb.Dispose()
-		u.txt.draw(hdc, u.toast, f, cBg, tr, dtCenter|dtVCenter|dtSingle)
-	}
-	return nil
 }
 
 // ---------------------------------------------------------------------------
