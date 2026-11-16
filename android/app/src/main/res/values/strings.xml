@@ -8,7 +8,7 @@
     <string name="status_on">Шифрование включено</string>
     <string name="settings">Настройки</string>
     <string name="about">О программе</string>
-    <string name="about_text">Шифрует DNS и обходит блокировки провайдера прямо на устройстве — без VPN-подписок и своих серверов.\n\nСначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (зашифрованный туннель, сайт видит IP Cloudflare) или сеть Tor.\n\nГолосовые звонки и прочий UDP работают; банки и сервисы с привязкой к стране можно пустить мимо Aristocrat NET в настройках.\n\nИспользуются: wireguard-go, gVisor, Tor (tor-android), lyrebird, hev-socks5-tunnel. Лицензия MIT.</string>
+    <string name="about_text">Разработчик: Aristocrat (в своём кругу — Старый)\n\nШифрует DNS и обходит блокировки провайдера прямо на устройстве — без VPN-подписок и своих серверов.\n\nСначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (зашифрованный туннель, сайт видит IP Cloudflare) или сеть Tor.\n\nГолосовые звонки и прочий UDP работают; банки и сервисы с привязкой к стране можно пустить мимо Aristocrat NET в настройках.\n\nИспользуются: wireguard-go, gVisor, Tor (tor-android), lyrebird, hev-socks5-tunnel. Лицензия MIT.</string>
     <string name="ip_unknown">IP не определён</string>
     <string name="sub_off">Трафик идёт как обычно</string>
     <string name="route_label">Маршрут</string>
@@ -60,6 +60,8 @@
     <string name="recv_title">Получены мосты</string>
     <string name="recv_accept">Принять</string>
     <string name="recv_cancel">Отмена</string>
+    <string name="notif_open">Открыть</string>
+    <string name="notif_stop">Отключить</string>
     <string name="notif_channel">Работа VPN</string>
     <string name="notif_text">Обход блокировок включён</string>
     <string name="hint">Сначала соединение идёт напрямую с обходом DPI. Если сайт заблокирован по IP или обход не помог — автоматически через WARP или Tor. Сайт запоминается. WARP — бесплатный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш.</string>

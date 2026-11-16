@@ -170,11 +170,20 @@ public class ObhodVpnService extends VpnService {
         }
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class),
                 PendingIntent.FLAG_IMMUTABLE);
+        // Кнопки «Открыть» и «Отключить» видны, когда уведомление развёрнуто (потянуть его вниз).
+        PendingIntent stop = PendingIntent.getService(this, 1,
+                new Intent(this, ObhodVpnService.class).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE);
         Notification n = b.setContentTitle(getString(R.string.app_name))
                 .setContentText(getString(R.string.notif_text))
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(open)
                 .setOngoing(true)
+                .addAction(new Notification.Action.Builder(
+                        android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_menu_view),
+                        getString(R.string.notif_open), open).build())
+                .addAction(new Notification.Action.Builder(
+                        android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                        getString(R.string.notif_stop), stop).build())
                 .build();
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
