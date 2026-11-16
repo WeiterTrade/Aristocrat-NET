@@ -27,6 +27,7 @@ import java.util.TreeMap;
 public class SettingsActivity extends Activity {
     private Spinner route, heavy, bridges, country;
     private TextView customBox;
+    private View customRow;
     private View bridgesLabel, heavyLabel, countryLabel;
     private TextView torLine;
     private String[] routeValues, heavyValues, bridgeValues, countryValues;
@@ -60,6 +61,7 @@ public class SettingsActivity extends Activity {
         heavyLabel = findViewById(R.id.heavyLabel);
         bridgesLabel = findViewById(R.id.bridgesLabel);
         customBox = findViewById(R.id.customBox);
+        customRow = findViewById(R.id.customRow);
         findViewById(R.id.openLog).setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         torLine = findViewById(R.id.torLine);
         routeValues = getResources().getStringArray(R.array.route_values);
@@ -86,6 +88,7 @@ public class SettingsActivity extends Activity {
             @Override void picked(int pos) { save("bridges", bridgeValues[pos]); }
         });
         customBox.setOnClickListener(v -> startActivity(new Intent(this, BridgesActivity.class)));
+        findViewById(R.id.sendBridges).setOnClickListener(v -> BridgeShare.send(this));
         bindCheck(R.id.keepLocal, "keep_local", Prefs.keepLocal(this));
         bindCheck(R.id.geoTor, "geo_tor", Prefs.geoTor(this));
         findViewById(R.id.apps).setOnClickListener(v -> pickApps());
@@ -195,7 +198,7 @@ public class SettingsActivity extends Activity {
         bridgesLabel.setVisibility(tor ? View.VISIBLE : View.GONE);
         country.setVisibility(tor ? View.VISIBLE : View.GONE);
         countryLabel.setVisibility(tor ? View.VISIBLE : View.GONE);
-        customBox.setVisibility(tor ? View.VISIBLE : View.GONE);
+        customRow.setVisibility(tor ? View.VISIBLE : View.GONE);
         int n = BridgesActivity.count(Prefs.custom(this));
         customBox.setText(getString(R.string.custom_row) + (n > 0 ? "   (" + n + ")" : ""));
     }
@@ -203,6 +206,7 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        BridgeShare.resume(this);
         // На экране «Свои мосты» могли переключиться на свои мосты и изменить их число.
         int bi = Arrays.asList(bridgeValues).indexOf(Prefs.bridges(this));
         if (bi >= 0 && bridges.getSelectedItemPosition() != bi) bridges.setSelection(bi);
@@ -213,6 +217,7 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        BridgeShare.pause(this);
         ui.removeCallbacks(tick);
     }
 

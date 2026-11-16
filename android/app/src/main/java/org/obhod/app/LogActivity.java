@@ -50,12 +50,14 @@ public class LogActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        BridgeShare.resume(this);
         ui.post(tick);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        BridgeShare.pause(this);
         ui.removeCallbacks(tick);
     }
 }

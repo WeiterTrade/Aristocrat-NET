@@ -60,6 +60,37 @@ public class MainActivity extends Activity {
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2);
         }
+        if (b == null) askBridgesOnce();
+    }
+
+    /** Первый запуск: предложить получить мосты Tor (в России без них Tor не подключится). */
+    private void askBridgesOnce() {
+        if (Prefs.get(this).getBoolean("bridges_asked", false)) return;
+        if (BridgesActivity.count(Prefs.custom(this)) > 0) { // мосты уже есть (обновление)
+            Prefs.get(this).edit().putBoolean("bridges_asked", true).apply();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.ask_bridges_title)
+                .setMessage(R.string.ask_bridges_text)
+                .setCancelable(false)
+                .setPositiveButton(R.string.ask_bridges_get, (d, w) -> {
+                    Prefs.get(this).edit().putBoolean("bridges_asked", true).apply();
+                    // Сначала экран «Свои мосты» — на него человек вернётся из Telegram и вставит мосты.
+                    startActivity(new Intent(this, BridgesActivity.class));
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("tg://resolve?domain=GetBridgesBot")));
+                    } catch (Exception e) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://t.me/GetBridgesBot")));
+                        } catch (Exception e2) {
+                            Toast.makeText(this, R.string.ask_bridges_no_tg, Toast.LENGTH_LONG).show();
+                        }
+                    }
+                })
+                .setNegativeButton(R.string.ask_bridges_kz, (d, w) ->
+                        Prefs.get(this).edit().putBoolean("bridges_asked", true).apply())
+                .show();
     }
 
     private void showAbout() {
@@ -217,12 +248,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        BridgeShare.resume(this);
         ui.post(tick);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        BridgeShare.pause(this);
         ui.removeCallbacks(tick);
     }
 }

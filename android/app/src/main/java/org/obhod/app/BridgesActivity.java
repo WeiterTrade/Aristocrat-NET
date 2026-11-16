@@ -63,4 +63,16 @@ public class BridgesActivity extends Activity {
         Toast.makeText(this, R.string.bridges_saved, Toast.LENGTH_SHORT).show();
         finish();
     }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        BridgeShare.resume(this);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        BridgeShare.pause(this);
+    }
 }
