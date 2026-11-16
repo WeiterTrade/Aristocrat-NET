@@ -18,14 +18,22 @@ recommends:
 
 # Окно программы — GTK3 + WebKitGTK 4.1 (есть в Ubuntu 22.04+, Linux Mint 21+, Debian 12, Fedora 36+).
 overrides:
+  # Значок в трее в GNOME — через расширение AppIndicator (ставится вместе с программой,
+  # включается самой программой при первом запуске).
   deb:
     depends:
       - libgtk-3-0
       - libwebkit2gtk-4.1-0
+    recommends:
+      - xdg-utils
+      - gnome-shell-extension-appindicator
   rpm:
     depends:
       - gtk3
       - webkit2gtk4.1
+    recommends:
+      - xdg-utils
+      - gnome-shell-extension-appindicator
 
 contents:
   - src: build/linux/obhod

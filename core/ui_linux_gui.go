@@ -9,6 +9,8 @@ package main
 import (
 	_ "embed"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"fyne.io/systray"
@@ -31,6 +33,7 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 	a.showUI = request
 	a.mu.Unlock()
 
+	go enableGnomeTray(a.logf)
 	start, end := systray.RunWithExternalLoop(func() {
 		systray.SetIcon(trayPNG)
 		systray.SetTitle(appTitle)
@@ -100,6 +103,10 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 			continue
 		}
 		w.SetTitle(appTitle)
+		w.InterceptClose()
+		a.mu.Lock()
+		a.hideUI = w.Terminate // «Свернуть в трей» из вопроса при закрытии
+		a.mu.Unlock()
 		w.SetSize(460, 820, webview.HintNone)
 		w.Navigate(url)
 		stop := make(chan struct{})
@@ -117,7 +124,41 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 			}
 		}()
 		w.Run()
+		a.mu.Lock()
+		a.hideUI = nil
+		a.mu.Unlock()
 		close(stop)
 		w.Destroy()
 	}
+}
+
+// enableGnomeTray — в GNOME значки в трее показывает только расширение AppIndicator.
+// Пакет программы ставит его как рекомендуемый (gnome-shell-extension-appindicator),
+// а здесь оно включается для пользователя, если выключено.
+func enableGnomeTray(logf func(string, ...any)) {
+	de := strings.ToLower(os.Getenv("XDG_CURRENT_DESKTOP") + ":" + os.Getenv("DESKTOP_SESSION"))
+	if !strings.Contains(de, "gnome") {
+		return
+	}
+	if _, err := exec.LookPath("gnome-extensions"); err != nil {
+		return
+	}
+	out, _ := exec.Command("gnome-extensions", "list").Output()
+	enabled, _ := exec.Command("gnome-extensions", "list", "--enabled").Output()
+	for _, uuid := range []string{"ubuntu-appindicators@ubuntu.com", "appindicatorsupport@rgcjonas.gmail.com"} {
+		if strings.Contains(string(enabled), uuid) {
+			return // уже работает
+		}
+	}
+	for _, uuid := range []string{"appindicatorsupport@rgcjonas.gmail.com", "ubuntu-appindicators@ubuntu.com"} {
+		if strings.Contains(string(out), uuid) {
+			if err := exec.Command("gnome-extensions", "enable", uuid).Run(); err == nil {
+				logf("GNOME: включено расширение для значков в трее (%s). Если значок не появился — выйдите из системы и войдите снова.", uuid)
+			}
+			return
+		}
+	}
+	// Расширение только что поставлено вместе с программой — GNOME увидит его после повторного входа.
+	_ = exec.Command("gsettings", "set", "org.gnome.shell", "disable-user-extensions", "false").Run()
+	logf("GNOME: для значка в трее нужно расширение AppIndicator. Установите пакет gnome-shell-extension-appindicator и войдите в систему заново.")
 }

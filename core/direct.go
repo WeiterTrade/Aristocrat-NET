@@ -206,6 +206,25 @@ func (l *Local) DirectIP(ip net.IP) bool {
 	return localCountries[l.Geo.Country(ip)]
 }
 
+// YouTube и его серверы видео и картинок.
+var youtubeDomains = []string{
+	"youtube.com", "youtu.be", "yt.be", "googlevideo.com", "ytimg.com", "ggpht.com", "youtube-nocookie.com",
+	"youtubei.googleapis.com", "youtube.googleapis.com", "youtubekids.com", "youtube-ui.l.google.com",
+}
+
+func isYouTube(host string) bool { return matchSuffix(host, youtubeDomains) }
+
+// HomeIPOnly — сайт должен видеть российский IP пользователя: YouTube в России.
+// Google не продаёт рекламу в России, поэтому с российским IP YouTube идёт без рекламы.
+// Через Tor или чужую страну реклама вернулась бы, поэтому YouTube у пользователя
+// в России всегда идёт напрямую (с обходом замедления) или через WARP (он даёт IP той же страны).
+func (l *Local) HomeIPOnly(host string) bool {
+	if l == nil || (l.Enabled != nil && !l.Enabled()) || l.UserCountry == nil || l.UserCountry() != "RU" {
+		return false
+	}
+	return isYouTube(host)
+}
+
 // NeedsForeignIP — сервис закрыт для страны пользователя (Spotify в России).
 func (l *Local) NeedsForeignIP(host string) bool {
 	if l == nil || l.UserCountry == nil || l.UserCountry() != "RU" {

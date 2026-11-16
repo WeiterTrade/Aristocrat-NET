@@ -27,6 +27,7 @@ type Engine struct {
 	Warp      *Warp
 	Local     *Local        // российские и казахстанские сайты — напрямую; Spotify в России — через Tor
 	Ads       *AdBlock      // блокировка рекламы (nil — выключена)
+	names     dnsNames      // адрес → имя сайта (по ответам нашего DNS, см. dnsserver.go)
 	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
 	Timeout   time.Duration // ожидание ответа сервера на каждый метод
 	TorWait   time.Duration // сколько ждать подключения Tor при фолбэке
@@ -227,6 +228,14 @@ func (e *Engine) viaFirst(host string) (Upstream, error) {
 	if e.Local.Direct(host) {
 		return nil, nil
 	}
+	// YouTube в России — с российским IP (без рекламы): напрямую с обходом замедления
+	// или, в режиме «Всё через WARP», через WARP — но никогда через Tor.
+	if e.Local.HomeIPOnly(host) {
+		if e.route() == RouteWarp && e.warpOn() {
+			return e.Warp, nil
+		}
+		return nil, nil
+	}
 	switch e.route() {
 	case RouteTor:
 		if !e.torOn() {
@@ -414,7 +423,14 @@ func (e *Engine) connect(host string, port int) (net.Conn, string, error) {
 	}
 	// Напрямую не подключиться (блокировка по IP или подмена DNS) — пробуем запасные пути
 	// (кроме местных сайтов: им нужен настоящий IP).
-	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) && !e.Local.Direct(host) {
+	ups := e.upstreams()
+	if e.Local.HomeIPOnly(host) { // YouTube в России: запасной путь — только WARP (российский IP)
+		ups = nil
+		if e.warpOn() {
+			ups = []Upstream{e.Warp}
+		}
+	}
+	if len(ups) > 0 && !isLocalAddr(host) && !e.Local.Direct(host) {
 		e.logf("%s: напрямую недоступен (%s), пробую %s", host, shortErr(err), upLabel(ups[0].Name()))
 		up, u, herr := e.heavyDial(host, port, ups)
 		if herr == nil {
@@ -505,6 +521,7 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 	_ = c.SetDeadline(time.Time{})
 	switch req[1] {
 	case 1: // CONNECT
+		host = e.hostFor(host) // приложение подключается по адресу из нашего DNS — узнаём имя сайта
 	case 3: // UDP ASSOCIATE — голосовые звонки, игры, DNS и т. п.
 		e.socksUDP(c, br)
 		return
@@ -690,7 +707,14 @@ func (e *Engine) relay(client net.Conn, br *bufio.Reader, host string, port int,
 	}
 
 	// Обход DPI не помог — последняя попытка через WARP/Tor.
-	if ups := e.upstreams(); len(ups) > 0 && !isLocalAddr(host) && !e.Local.Direct(host) {
+	ups := e.upstreams()
+	if e.Local.HomeIPOnly(host) { // YouTube в России: запасной путь — только WARP (российский IP)
+		ups = nil
+		if e.warpOn() {
+			ups = []Upstream{e.Warp}
+		}
+	}
+	if len(ups) > 0 && !isLocalAddr(host) && !e.Local.Direct(host) {
 		e.logf("%s: обход DPI не помог (%s), пробую %s", host, shortErr(lastErr), upLabel(ups[0].Name()))
 		var errs []string
 		for _, u := range ups {

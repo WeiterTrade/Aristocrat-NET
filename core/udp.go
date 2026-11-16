@@ -157,7 +157,26 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 			client = from
 			mu.Unlock()
 			host, port, hl, ok := udpHeader(buf[:n])
-			if !ok || port == 0 || (e.BlockQUIC && port == 443) || e.Ads.Blocked(host) {
+			if !ok || port == 0 {
+				continue
+			}
+			// DNS отвечаем сами: настоящие адреса через шифрованный DNS (см. dnsserver.go).
+			if port == 53 {
+				q := append([]byte(nil), buf[hl:n]...)
+				from := &net.UDPAddr{IP: net.ParseIP(host), Port: 53}
+				if from.IP == nil {
+					from.IP = net.IPv4zero
+				}
+				cl := client
+				go func() {
+					if resp := e.answerDNS(q); resp != nil {
+						touch()
+						_, _ = lc.WriteToUDP(udpPacket(from, resp), cl)
+					}
+				}()
+				continue
+			}
+			if (e.BlockQUIC && port == 443) || e.Ads.Blocked(e.hostFor(host)) {
 				continue
 			}
 			ip := resolve(host)

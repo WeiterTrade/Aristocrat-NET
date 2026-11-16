@@ -113,6 +113,8 @@ var routeHints = map[string]string{
 	RouteTor:  "Весь трафик через Tor: IP другой страны, медленнее",
 }
 
+var closeNames = map[string]string{"": "Спрашивать", "tray": "Сворачивать в трей", "quit": "Выходить из программы"}
+
 var dohIDs = []string{"cloudflare", "google", "quad9"}
 var dohNames = map[string]string{"cloudflare": "Cloudflare (1.1.1.1)", "google": "Google (8.8.8.8)", "quad9": "Quad9 (9.9.9.9)"}
 
@@ -140,6 +142,21 @@ func (u *nativeUI) buildPage(id string) sPage {
 			"auto":   "Сначала snowflake, при неудаче — obfs4 и meek; свои мосты — всегда",
 			"custom": "Только мосты из Telegram-бота @GetBridgesBot",
 		}, st.Bridges, func(s *Settings, v string) { s.Bridges = v })
+	case "close":
+		return u.radioPage("При закрытии окна", []string{"", "tray", "quit"}, closeNames, map[string]string{
+			"tray": "Защита продолжит работать, значок останется в трее",
+		}, st.CloseAction, func(s *Settings, v string) { s.CloseAction = v })
+	case "youtube":
+		return sPage{title: "YouTube без рекламы", parent: "root", items: []*sItem{
+			{kind: kText, title: "Ролики YouTube и реклама в них приходят с одних и тех же серверов Google по зашифрованному соединению — " +
+				"поэтому их не разделить на уровне сети (так не умеет ни одна программа, включая AdGuard DNS). " +
+				"Рекламу в роликах убирает сам браузер: поставьте расширения uBlock Origin (реклама) и SponsorBlock (спонсорские вставки)."},
+			{kind: kButtons, btns: []*sBtn{
+				{label: "uBlock Origin", primary: true, act: func() { openLink("https://ublockorigin.com/") }},
+				{label: "SponsorBlock", act: func() { openLink("https://sponsor.ajay.app/") }},
+			}},
+			{kind: kText, title: "Для телевизора и Android есть SmartTube и Tubular — YouTube без рекламы и со SponsorBlock (кнопка в Android-версии Aristocrat NET)."},
+		}}
 	case "country":
 		return u.radioPage("Страна IP через Tor", torCountryOrder, TorCountries, nil, st.TorCountry,
 			func(s *Settings, v string) { s.TorCountry = v })
@@ -292,6 +309,7 @@ func (u *nativeUI) buildPage(id string) sPage {
 	items = append(items,
 		section("Реклама"),
 		toggleRow("Блокировать рекламу", adSub, st.AdBlock, func() { u.apply(func(s *Settings) { s.AdBlock = !s.AdBlock }) }),
+		row("YouTube без рекламы", "Реклама в роликах и SponsorBlock", "", u.open("youtube")),
 		section("Правила"),
 		toggleRow("Российские и Казахстанские сайты — напрямую", "С настоящим IP даже через Tor и WARP: банки, госуслуги, Яндекс, VK",
 			st.KeepLocal, func() { u.apply(func(s *Settings) { s.KeepLocal = !s.KeepLocal }) }),
@@ -304,6 +322,7 @@ func (u *nativeUI) buildPage(id string) sPage {
 		toggleRow("Системный прокси", "Браузеры и программы сами идут через "+appTitle,
 			st.SysProxy, func() { u.apply(func(s *Settings) { s.SysProxy = !s.SysProxy }) }),
 		toggleRow("Включать при запуске", "", st.AutoStart, func() { u.apply(func(s *Settings) { s.AutoStart = !s.AutoStart }) }),
+		row("При закрытии окна", "", closeNames[st.CloseAction], u.open("close")),
 		row("Порт прокси", "", strconv.Itoa(st.Port), u.open("port")),
 		section("Другие"),
 		row("Журнал", "", "", u.open("logs")),

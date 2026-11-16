@@ -24,6 +24,28 @@ static void obhod_present(webview_t w) {
 	}
 }
 
+// Крестик окна: вместо закрытия — вопрос в самой странице (window.obhodClose),
+// она сама сворачивает окно в трей или закрывает программу.
+static gint64 obhod_last_delete = 0;
+
+static gboolean obhod_on_delete(GtkWidget *widget, GdkEvent *event, gpointer data) {
+	// Второй щелчок по крестику за 3 секунды (страница не ответила) — просто закрываем окно.
+	gint64 now = g_get_monotonic_time();
+	if (now - obhod_last_delete < 3000000) {
+		return FALSE;
+	}
+	obhod_last_delete = now;
+	webview_eval((webview_t)data, "window.obhodClose ? window.obhodClose() : (window.obhodCloseMissing = 1)");
+	return TRUE;
+}
+
+static void obhod_intercept_close(webview_t w) {
+	GtkWidget *win = (GtkWidget *)webview_get_window(w);
+	if (win != NULL) {
+		g_signal_connect(G_OBJECT(win), "delete-event", G_CALLBACK(obhod_on_delete), w);
+	}
+}
+
 void CgoWebViewDispatch(webview_t w, uintptr_t arg);
 void CgoWebViewBind(webview_t w, const char *name, uintptr_t index);
 void CgoWebViewUnbind(webview_t w, const char *name);
@@ -63,6 +85,9 @@ const (
 type WebView interface {
 	// Present выводит окно на передний план (вызывать из главного потока).
 	Present()
+
+	// InterceptClose — крестик окна вызывает window.obhodClose() на странице вместо закрытия.
+	InterceptClose()
 
 	// Run runs the main loop until it's terminated. After this function exits -
 	// you must destroy the webview.
@@ -167,6 +192,10 @@ func NewWindow(debug bool, window unsafe.Pointer) WebView {
 // Present выводит окно на передний план (вызывать через Dispatch — из главного потока).
 func (w *webview) Present() {
 	C.obhod_present(w.w)
+}
+
+func (w *webview) InterceptClose() {
+	C.obhod_intercept_close(w.w)
 }
 
 func (w *webview) Destroy() {

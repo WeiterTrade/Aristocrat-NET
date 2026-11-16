@@ -375,13 +375,12 @@ type nativeUI struct {
 	a    *App
 	quit func()
 
-	mw        *walk.MainWindow
-	title     *walk.CustomWidget
-	home      *walk.CustomWidget
-	setPane   *walk.CustomWidget // настройки: страницы рисуются сами (как в мобильных приложениях)
-	ni        *walk.NotifyIcon
-	toggleAct *walk.Action
-	txt       gdiText
+	mw      *walk.MainWindow
+	title   *walk.CustomWidget
+	home    *walk.CustomWidget
+	setPane *walk.CustomWidget // настройки: страницы рисуются сами (как в мобильных приложениях)
+	ni      *walk.NotifyIcon
+	txt     gdiText
 
 	mu       sync.Mutex
 	view     string
@@ -611,7 +610,7 @@ func (u *nativeUI) build() error {
 			return
 		}
 		*canceled = true
-		u.hideToTray()
+		u.askClose()
 	})
 
 	// Значок в трее.
@@ -629,18 +628,12 @@ func (u *nativeUI) build() error {
 			u.showWindow()
 		}
 	})
-	add := func(text string, f func()) *walk.Action {
-		act := walk.NewAction()
-		_ = act.SetText(text)
-		act.Triggered().Attach(f)
-		_ = ni.ContextMenu().Actions().Add(act)
-		return act
-	}
-	add("Открыть "+appTitle, u.showWindow)
-	u.toggleAct = add("Включить обход", u.toggle)
-	_ = ni.ContextMenu().Actions().Add(walk.NewSeparatorAction())
-	add("Настройки", func() { u.showWindow(); u.setView(viewSettings) })
-	add("Выход", func() { go u.quit() })
+	// Меню по правой кнопке — своё, в стиле программы (стандартное меню Windows не перекрасить).
+	ni.MouseUp().Attach(func(x, y int, button walk.MouseButton) {
+		if button == walk.RightButton {
+			u.trayMenu()
+		}
+	})
 	_ = ni.SetVisible(true)
 	_ = u.home.SetFocus()
 	return nil
@@ -918,7 +911,7 @@ func (u *nativeUI) titleDown(x, y int, button walk.MouseButton) {
 	case 2:
 		u.toggleMax()
 	case 3:
-		u.hideToTray()
+		u.askClose()
 	case 4:
 		u.goBack()
 	default:
@@ -1196,10 +1189,8 @@ func (u *nativeUI) ticker(done <-chan struct{}) {
 			}
 			u.home.Invalidate()
 			if on {
-				_ = u.toggleAct.SetText("Выключить обход")
 				_ = u.ni.SetToolTip(appTitle + " — шифрование включено")
 			} else {
-				_ = u.toggleAct.SetText("Включить обход")
 				_ = u.ni.SetToolTip(appTitle + " — выключено")
 			}
 		})

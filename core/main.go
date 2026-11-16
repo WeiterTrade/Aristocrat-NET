@@ -39,7 +39,7 @@ const appName = "Obhod" // имя папки данных (не меняется
 // appTitle — название программы для пользователя.
 const appTitle = "Aristocrat NET"
 
-var appVersion = "0.9.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.9.2" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -73,6 +73,7 @@ type Settings struct {
 	GeoTor        bool              `json:"geo_tor"`       // в России: Spotify и др. закрытые для России сервисы — через Tor
 	AdBlock       bool              `json:"adblock"`       // блокировать рекламу и слежку
 	BridgesAsked  bool              `json:"bridges_asked"` // при первом запуске уже предлагали получить мосты
+	CloseAction   string            `json:"close_action"`  // крестик окна: "" — спрашивать, tray — в трей, quit — выход
 	Learned       map[string]string `json:"learned"`
 	Ver           int               `json:"ver"`
 }
@@ -104,6 +105,9 @@ func (s *Settings) normalize() {
 	if TorCountries[s.TorCountry] == "" {
 		s.TorCountry = ""
 	}
+	if s.CloseAction != "tray" && s.CloseAction != "quit" {
+		s.CloseAction = ""
+	}
 	if DoHServers[s.DoH] == "" {
 		s.DoH = d.DoH
 	}
@@ -130,6 +134,7 @@ type App struct {
 	torErr   string
 	ads      *AdBlock
 	share    *Share // передача мостов в локальной сети (на ПК; на Android — в приложении)
+	hideUI   func() // Linux: закрыть окно WebKitGTK (программа остаётся в трее)
 	showUI   func() // показать окно программы (нативное окно на Windows, браузер на Linux)
 }
 
@@ -271,7 +276,7 @@ func (a *App) applySettings(s Settings) error {
 	a.mu.Lock()
 	old := a.s
 	a.s.Port, a.s.Mode, a.s.Route, a.s.SysProxy, a.s.DoH, a.s.AutoStart = s.Port, s.Mode, s.Route, s.SysProxy, s.DoH, s.AutoStart
-	a.s.KeepLocal, a.s.GeoTor, a.s.AdBlock = s.KeepLocal, s.GeoTor, s.AdBlock
+	a.s.KeepLocal, a.s.GeoTor, a.s.AdBlock, a.s.CloseAction = s.KeepLocal, s.GeoTor, s.AdBlock, s.CloseAction
 	a.s.Bridges, a.s.CustomBridges, a.s.Heavy, a.s.TorCountry = s.Bridges, s.CustomBridges, s.Heavy, s.TorCountry
 	a.mu.Unlock()
 	a.eng.Mode.Store(s.Mode)
@@ -735,6 +740,15 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		a.answerShare(req.ID, req.Accept)
 		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/hide", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		a.mu.Lock()
+		hide := a.hideUI
+		a.mu.Unlock()
+		writeJSON(w, 200, map[string]bool{"ok": hide != nil})
+		if hide != nil {
+			go hide()
+		}
 	}))
 	mux.HandleFunc("/api/asked", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		a.setBridgesAsked()

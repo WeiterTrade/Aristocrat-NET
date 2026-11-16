@@ -132,6 +132,14 @@
 </section>
 
 <!-- О программе -->
+<div class="modal hidden" id="closeAsk">
+  <div class="card">
+    <h3 style="margin:0 0 8px;color:var(--goldl)">Закрыть Aristocrat NET?</h3>
+    <p>В трее программа продолжит работать, и защита останется включённой. «Выйти» — выключить защиту и закрыть программу.</p>
+    <label class="hint" style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="closeRemember"> Запомнить выбор</label>
+    <div class="btns" style="justify-content:flex-end"><button class="btn ghost" id="closeQuit">Выйти</button><button class="btn" id="closeTray">Свернуть в трей</button></div>
+  </div>
+</div>
 <div class="modal hidden" id="welcome">
   <div class="card">
     <h3 style="margin:0 0 8px;color:var(--goldl)">Получите мосты Tor</h3>
@@ -202,6 +210,7 @@ function row(o) {
 }
 const sec = (t, rows) => `<div class="sec">${esc(t)}</div><div class="list">${rows.join('')}</div>`;
 
+const closeNames = [{ id: '', name: 'Спрашивать' }, { id: 'tray', name: 'Сворачивать в трей', hint: 'Защита продолжит работать, значок останется в трее' }, { id: 'quit', name: 'Выходить из программы' }];
 const radios = {
   route: ['Режим работы', s => [{ id: 'auto' }, { id: 'dpi' }, { id: 'warp' }, { id: 'tor' }].map(x => ({ id: x.id, name: nameOf(s.routes, x.id), hint: routeHints[x.id] })), 'route'],
   heavy: ['Если сайт заблокирован по IP', s => s.heavies, 'heavy'],
@@ -209,8 +218,9 @@ const radios = {
   doh: ['Шифрованный DNS', () => dohs, 'doh'],
   bridges: ['Мосты Tor', s => s.bridges.map(b => Object.assign({}, b, { hint: b.id === 'auto' ? 'Сначала snowflake, при неудаче — obfs4 и meek; свои мосты — всегда' : b.id === 'custom' ? 'Только мосты из Telegram-бота @GetBridgesBot' : '' })), 'bridges'],
   country: ['Страна IP через Tor', s => s.countries, 'tor_country'],
+  close: ['При закрытии окна', () => closeNames, 'close_action'],
 };
-const titles = { send: 'Отправить мосты', custom: 'Свои мосты', test: 'Проверить сайт', sites: 'Подобранные сайты', port: 'Порт прокси', logs: 'Журнал' };
+const titles = { youtube: 'YouTube без рекламы', send: 'Отправить мосты', custom: 'Свои мосты', test: 'Проверить сайт', sites: 'Подобранные сайты', port: 'Порт прокси', logs: 'Журнал' };
 
 function renderPage() {
   if (!S || !page) return;
@@ -241,6 +251,7 @@ function renderPage() {
         row({ t: 'Страна IP через Tor', v: country, nav: 1, a: 'go:country' }),
       ]) : '') +
       sec('Реклама', [
+        row({ t: 'YouTube без рекламы', s: 'Реклама в роликах и SponsorBlock', nav: 1, a: 'go:youtube' }),
         row({ t: 'Блокировать рекламу', s: 'Баннеры, всплывающие окна, реклама в приложениях и слежка' + (st.adblock && s.ads ? '. Заблокировано: ' + s.ads.blocked : ''), toggle: st.adblock, a: 'tg:adblock' }),
       ]) +
       sec('Правила', [
@@ -254,6 +265,7 @@ function renderPage() {
       sec('Система', [
         row({ t: 'Системный прокси', s: 'Браузеры и программы сами идут через Aristocrat NET', toggle: st.sys_proxy, a: 'tg:sys_proxy' }),
         row({ t: 'Включать при запуске', toggle: st.auto_start, a: 'tg:auto_start' }),
+        row({ t: 'При закрытии окна', v: nameOf(closeNames, st.close_action || ''), nav: 1, a: 'go:close' }),
         row({ t: 'Порт прокси', v: String(st.port), nav: 1, a: 'go:port' }),
       ]) +
       sec('Другие', [
@@ -273,6 +285,9 @@ function renderPage() {
       <input class="field" id="host" placeholder="например, youtube.com" spellcheck="false"><div class="btns"><button class="btn" id="test" data-a="test">${testing ? 'Проверяю…' : 'Проверить'}</button></div><div id="testOut">${testHtml}</div>`;
   if (page === 'port') el.innerHTML = `<input class="field" id="port" type="number" min="1024" max="65535" value="${st.port}">
       <div class="btns"><button class="btn" data-a="saveport">Сохранить</button></div><div class="note">Если «Системный прокси» выключен, укажите в браузере прокси 127.0.0.1 и этот порт (HTTP или SOCKS5).</div>`;
+  if (page === 'youtube') el.innerHTML = `<div class="note">Ролики YouTube и реклама в них приходят с одних и тех же серверов Google по зашифрованному соединению — поэтому их не разделить на уровне сети (так не умеет ни одна программа, включая AdGuard DNS). Рекламу в роликах убирает сам браузер: поставьте расширения uBlock Origin (реклама) и SponsorBlock (спонсорские вставки).</div>
+      <div class="btns"><button class="btn" data-a="link:ublock">uBlock Origin</button><button class="btn ghost" data-a="link:sponsor">SponsorBlock</button></div>
+      <div class="note">Для телевизора и Android есть SmartTube и Tubular — YouTube без рекламы и со SponsorBlock (кнопка в Android-версии Aristocrat NET).</div>`;
   if (page === 'send') { el.innerHTML = `<div class="note">Откройте Aristocrat NET на телевизоре, телефоне или другом компьютере в этой же сети Wi-Fi и выберите устройство. На нём появится вопрос, принять ли мосты.</div><div id="devs"></div><div class="btns"><button class="btn ghost" data-a="discover">Искать снова</button></div>`; discover(); }
   if (page === 'sites') { el.innerHTML = `<div class="btns"><button class="btn ghost" data-a="forgetall">Забыть все</button></div><div class="list" id="sites"></div>`; renderSites(); }
   if (page === 'logs') { el.innerHTML = `<div class="btns"><button class="btn" data-a="copylog">Копировать</button><button class="btn ghost" data-a="clearlog">Очистить вид</button></div><pre class="log" id="logs"></pre>`; loadLogs(); }
@@ -333,6 +348,7 @@ $('page').addEventListener('click', async e => {
   else if (a === 'clearlog') { logCleared = (await api('logs')).length; loadLogs(); }
   else if (a === 'test') runTest();
   else if (a === 'getbridges') window.open(BOT, '_blank');
+  else if (cmd === 'link') window.open({ ublock: 'https://ublockorigin.com/', sponsor: 'https://sponsor.ajay.app/' }[k], '_blank');
   else if (a === 'discover') discover();
   else if (cmd === 'sendto') {
     try { await api('share/send', { ip: k }); toast('Мосты отправлены — подтвердите на устройстве'); } catch (e) { toast('Не удалось отправить: ' + e.message); }
@@ -364,6 +380,21 @@ function checkPrompts(s) {
     }, 0);
   }
 }
+// Крестик окна (Linux): свернуть в трей или выйти.
+window.obhodClose = () => {
+  const act = S && S.settings.close_action;
+  if (act === 'tray') return closeTo('tray', false);
+  if (act === 'quit') return closeTo('quit', false);
+  $('closeRemember').checked = false;
+  $('closeAsk').classList.remove('hidden');
+};
+async function closeTo(act, ask) {
+  $('closeAsk').classList.add('hidden');
+  if (ask && $('closeRemember').checked) { try { await api('settings', Object.assign({}, S.settings, { close_action: act })); } catch {} }
+  try { await api(act === 'tray' ? 'hide' : 'quit', {}); } catch {}
+}
+$('closeTray').onclick = () => closeTo('tray', true);
+$('closeQuit').onclick = () => closeTo('quit', true);
 $('wGet').onclick = async () => { $('welcome').classList.add('hidden'); window.open(BOT, '_blank'); try { await api('asked', {}); } catch {} go('custom'); };
 $('wKz').onclick = async () => { $('welcome').classList.add('hidden'); try { render(await api('asked', {})); } catch {} };
 $('page').addEventListener('keydown', e => { if (e.target.id === 'host' && e.key === 'Enter') runTest(); });

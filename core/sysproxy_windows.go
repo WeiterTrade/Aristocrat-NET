@@ -34,7 +34,7 @@ func SetSystemProxy(port int) error {
 	if _, err := run("reg", "add", inetKey, "/v", "ProxyServer", "/t", "REG_SZ", "/d", addr, "/f"); err != nil {
 		return err
 	}
-	_, _ = run("reg", "add", inetKey, "/v", "ProxyOverride", "/t", "REG_SZ", "/d", "localhost;127.*;10.*;192.168.*;<local>", "/f")
+	_, _ = run("reg", "add", inetKey, "/v", "ProxyOverride", "/t", "REG_SZ", "/d", "localhost;127.*;10.*;192.168.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;169.254.*;<local>", "/f")
 	if _, err := run("reg", "add", inetKey, "/v", "ProxyEnable", "/t", "REG_DWORD", "/d", "1", "/f"); err != nil {
 		return err
 	}

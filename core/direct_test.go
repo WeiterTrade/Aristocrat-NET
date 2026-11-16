@@ -75,3 +75,18 @@ func TestRouteLocalDirectAndSpotify(t *testing.T) {
 		t.Fatalf("Spotify в России — через Tor даже в «Авто»: %q %v", body, err)
 	}
 }
+
+func TestYouTubeHomeIPInRussia(t *testing.T) {
+	cc := "RU"
+	l := &Local{UserCountry: func() string { return cc }}
+	for h, want := range map[string]bool{"www.youtube.com": true, "rr1---sn-x.googlevideo.com": true, "i.ytimg.com": true,
+		"youtu.be": true, "google.com": false, "spotify.com": false} {
+		if got := l.HomeIPOnly(h); got != want {
+			t.Errorf("RU %s: %v", h, got)
+		}
+	}
+	cc = "KZ"
+	if l.HomeIPOnly("www.youtube.com") {
+		t.Error("в Казахстане правило не действует")
+	}
+}
