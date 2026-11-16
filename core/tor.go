@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,10 +63,13 @@ type TorOptions struct {
 	PTDir        string // путь к папке с lyrebird ОТНОСИТЕЛЬНО рабочей папки tor (без пробелов!)
 	WorkDir      string // рабочая папка процесса tor
 	LyrebirdPath string // явный путь к lyrebird (Android: liblyrebird.so)
-	GeoIPDir     string
-	ForAndroid   bool   // DataDirectory и порты управления задаёт TorService
-	LogFile      string // Android: куда tor пишет журнал (его читает ядро — для прогресса и причин ошибок)
-	ExitCountry  string // страна выхода (код ISO: de, nl, us…); пусто — любая
+	// PTSocks — транспорты, уже запущенные приложением (Android): имя → адрес SOCKS5.
+	// Тогда tor не запускает lyrebird сам («exec»), а подключается к готовому («socks5»).
+	PTSocks     map[string]string
+	GeoIPDir    string
+	ForAndroid  bool   // DataDirectory и порты управления задаёт TorService
+	LogFile     string // Android: куда tor пишет журнал (его читает ядро — для прогресса и причин ошибок)
+	ExitCountry string // страна выхода (код ISO: de, nl, us…); пусто — любая
 	// AutoPhase — этап автовыбора мостов: 0 — snowflake и свои мосты (лучше всего проходят
 	// блокировки в России и Казахстане), 1 — запасной: obfs4, meek и свои мосты.
 	AutoPhase int
@@ -214,6 +218,38 @@ func BuildTorrc(o TorOptions) (string, error) {
 		if m := reBridgeTransport.FindStringSubmatch(l); m != nil && !looksLikeAddr(m[1]) {
 			need[m[1]] = true
 		}
+	}
+
+	// Android: lyrebird уже запущен приложением. Сам запускать его tor-android не умеет:
+	// TorService дважды разбирает настройки в одном процессе (проверка и запуск), и tor 0.4.8
+	// падает на ClientTransportPlugin … exec (assert_unconfigured_count_ok в transports.c).
+	// Так же сделано в Orbot: транспорты работают отдельно, tor подключается к ним по SOCKS5.
+	if len(o.PTSocks) > 0 {
+		var kept []string
+		for _, l := range lines {
+			m := reBridgeTransport.FindStringSubmatch(l)
+			if m == nil || looksLikeAddr(m[1]) || o.PTSocks[m[1]] != "" {
+				kept = append(kept, l)
+			}
+		}
+		if len(kept) == 0 {
+			return "", errors.New("транспорт для этих мостов не запустился (lyrebird)")
+		}
+		names := make([]string, 0, len(need))
+		for t := range need {
+			if o.PTSocks[t] != "" {
+				names = append(names, t)
+			}
+		}
+		sort.Strings(names)
+		for _, t := range names {
+			w("ClientTransportPlugin %s socks5 %s", t, o.PTSocks[t])
+		}
+		w("UseBridges 1")
+		for _, l := range kept {
+			w("Bridge %s", strings.TrimPrefix(l, "Bridge "))
+		}
+		return b.String(), nil
 	}
 
 	// В torrc путь в ClientTransportPlugin не может содержать пробелы,

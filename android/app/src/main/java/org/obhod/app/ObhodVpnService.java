@@ -60,6 +60,8 @@ public class ObhodVpnService extends VpnService {
     private boolean torBound;
     private Thread worker;
     private static ObhodVpnService instance; // для перезапуска Tor из потока журнала
+    private Process ptProc;                  // lyrebird (транспорты мостов), запущенный приложением
+    private String ptSocks = "";            // его адреса: obfs4=127.0.0.1:port,…
     private int torCrashes = 0;              // сколько раз подряд упал процесс :tor
     private int torPhase = 0;                // этап автовыбора мостов: 0 — snowflake, 1 — obfs4/meek
     private File torCoreBin, torLyrebird, torData, torLogFile;
@@ -361,7 +363,8 @@ public class ObhodVpnService extends VpnService {
                 "-tor-log", torLog.getAbsolutePath(),
                 "-tor-country", Prefs.torCountry(this),
                 "-tor-phase", String.valueOf(torPhase),
-                "-geoip-dir", geo.getAbsolutePath())
+                "-geoip-dir", geo.getAbsolutePath(),
+                "-pt-socks", startTransports(lyrebird, data))
                 .redirectErrorStream(true).start();
         String out = readAll(p.getInputStream());
         if (p.waitFor() != 0) {
@@ -458,6 +461,7 @@ public class ObhodVpnService extends VpnService {
     }
 
     private void cleanup() {
+        stopTransports();
         try {
             TProxyService.TProxyStopService();
         } catch (Throwable ignored) {
@@ -582,4 +586,89 @@ public class ObhodVpnService extends VpnService {
             try { Thread.sleep(300); } catch (InterruptedException ignored) { }
         }
     }
+
+    /**
+     * Запускает lyrebird (obfs4, webtunnel, snowflake, meek) отдельным процессом и возвращает
+     * адреса его SOCKS5. Tor подключается к ним сам («ClientTransportPlugin … socks5»), как в Orbot.
+     * Запускать lyrebird силами tor («exec») на Android нельзя: TorService разбирает настройки
+     * дважды в одном процессе, и tor 0.4.8 падает (assert_unconfigured_count_ok).
+     */
+    private synchronized String startTransports(File lyrebird, File data) {
+        if (alive(ptProc) && !ptSocks.isEmpty()) return ptSocks;
+        stopTransports();
+        if (lyrebird == null || !lyrebird.exists()) {
+            log("Нет liblyrebird.so — мосты недоступны");
+            return "";
+        }
+        File state = new File(data, "pt_state");
+        //noinspection ResultOfMethodCallIgnored
+        state.mkdirs();
+        try {
+            ProcessBuilder pb = new ProcessBuilder(lyrebird.getAbsolutePath());
+            Map<String, String> env = pb.environment();
+            env.put("TOR_PT_MANAGED_TRANSPORT_VER", "1");
+            env.put("TOR_PT_CLIENT_TRANSPORTS", "obfs4,webtunnel,snowflake,meek_lite");
+            env.put("TOR_PT_STATE_LOCATION", state.getAbsolutePath());
+            env.put("TOR_PT_EXIT_ON_STDIN_CLOSE", "1");
+            pb.redirectErrorStream(true);
+            final Process p = pb.start();
+            ptProc = p;
+            final StringBuilder found = new StringBuilder();
+            final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+            new Thread(() -> {
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                    String l;
+                    while ((l = r.readLine()) != null) {
+                        String[] f = l.trim().split("\\s+");
+                        if (f.length >= 4 && "CMETHOD".equals(f[0]) && "socks5".equals(f[2])) {
+                            synchronized (found) {
+                                if (found.length() > 0) found.append(',');
+                                found.append(f[1]).append('=').append(f[3]);
+                            }
+                        } else if ("CMETHODS".equals(f[0]) || "ENV-ERROR".equals(f[0]) || "VERSION-ERROR".equals(f[0])) {
+                            if (!"CMETHODS".equals(f[0])) log("lyrebird: " + l);
+                            done.countDown();
+                        } else if (f[0].startsWith("CMETHOD-ERROR") || f[0].equals("LOG")) {
+                            log("lyrebird: " + l);
+                        }
+                    }
+                } catch (IOException ignored) {
+                }
+                done.countDown();
+            }, "obhod-lyrebird").start();
+            done.await(15, java.util.concurrent.TimeUnit.SECONDS);
+            synchronized (found) {
+                ptSocks = found.toString();
+            }
+            if (ptSocks.isEmpty()) {
+                log("lyrebird не запустил транспорты");
+            } else {
+                log("Транспорты мостов запущены: " + ptSocks);
+            }
+            return ptSocks;
+        } catch (Exception e) {
+            log("Не удалось запустить lyrebird: " + e.getMessage());
+            return "";
+        }
+    }
+
+    /** Process.isAlive() есть только с Android 8, а приложение работает с Android 7. */
+    private static boolean alive(Process p) {
+        if (p == null) return false;
+        try {
+            p.exitValue();
+            return false;
+        } catch (IllegalThreadStateException e) {
+            return true;
+        }
+    }
+
+    private synchronized void stopTransports() {
+        if (ptProc != null) {
+            ptProc.destroy();
+            ptProc = null;
+        }
+        ptSocks = "";
+    }
+
 }

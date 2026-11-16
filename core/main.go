@@ -38,7 +38,7 @@ const appName = "Obhod" // имя папки данных (не меняется
 // appTitle — название программы для пользователя.
 const appTitle = "Aristocrat NET"
 
-var appVersion = "0.8.3" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.8.4" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -730,6 +730,7 @@ func main() {
 		customFile = flag.String("custom-bridges", "", "файл со своими мостами")
 		ptConfig   = flag.String("pt-config", "", "путь к pt_config.json")
 		lyrebird   = flag.String("lyrebird", "", "путь к lyrebird")
+		ptSocks    = flag.String("pt-socks", "", "запущенные транспорты Tor (Android): obfs4=127.0.0.1:port,webtunnel=…")
 		version    = flag.Bool("version", false, "версия")
 		minimized  = flag.Bool("minimized", false, "запуститься свёрнутым в трей")
 	)
@@ -788,7 +789,7 @@ func main() {
 		}
 		torrc, err := BuildTorrc(TorOptions{Bridges: a.s.Bridges, Custom: custom, SocksAddr: torSocksAddr,
 			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true, LogFile: *torLog,
-			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir, AutoPhase: *torPhase})
+			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir, AutoPhase: *torPhase, PTSocks: parsePTSocks(*ptSocks)})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "torrc:", err)
 			os.Exit(1)
@@ -1101,4 +1102,15 @@ func openWindow(url string) {
 		cmd = exec.Command("xdg-open", url)
 	}
 	_ = cmd.Start()
+}
+
+// parsePTSocks разбирает «obfs4=127.0.0.1:1234,webtunnel=127.0.0.1:1235».
+func parsePTSocks(v string) map[string]string {
+	m := map[string]string{}
+	for _, kv := range strings.Split(v, ",") {
+		if k, a, ok := strings.Cut(strings.TrimSpace(kv), "="); ok && k != "" && a != "" {
+			m[k] = a
+		}
+	}
+	return m
 }

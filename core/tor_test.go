@@ -421,3 +421,26 @@ func TestAndroidSinglePluginLine(t *testing.T) {
 		}
 	}
 }
+
+// Android: lyrebird запущен приложением — tor подключается к нему по SOCKS5, без «exec».
+func TestAndroidPTSocks(t *testing.T) {
+	dir := t.TempDir()
+	ptPath := filepath.Join(dir, "pt_config.json")
+	os.WriteFile(ptPath, []byte(samplePT), 0o600)
+	rc, err := BuildTorrc(TorOptions{Bridges: "auto",
+		Custom:    "webtunnel [2001:db8::2]:443 FP url=https://w.example/x ver=0.0.1\nconjure 1.2.3.4:1 FP",
+		SocksAddr: torSocksAddr, PTConfigPath: ptPath, LyrebirdPath: "/x/liblyrebird.so", ForAndroid: true,
+		PTSocks: parsePTSocks("webtunnel=127.0.0.1:4001,snowflake=127.0.0.1:4002,obfs4=127.0.0.1:4003")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ClientTransportPlugin snowflake socks5 127.0.0.1:4002\n",
+		"ClientTransportPlugin webtunnel socks5 127.0.0.1:4001\n", "Bridge webtunnel", "Bridge snowflake"} {
+		if !strings.Contains(rc, want) {
+			t.Errorf("нет %q в\n%s", want, rc)
+		}
+	}
+	if strings.Contains(rc, " exec ") || strings.Contains(rc, "conjure") || strings.Contains(rc, "obfs4 socks5") {
+		t.Errorf("лишнее в torrc:\n%s", rc)
+	}
+}
