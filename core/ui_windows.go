@@ -1100,12 +1100,15 @@ func (u *nativeUI) paintAbout(hdc win.HDC, b walk.Rectangle, s float64) {
 	y := int(16*s) + int(210*s) + int(8*s)
 	u.txt.draw(hdc, "версия "+appVersion, u.txt.font("Segoe UI", int(13*s), false), cGoldLight,
 		walk.Rectangle{Y: y, Width: b.Width, Height: int(20 * s)}, dtCenter|dtSingle)
+	y += int(22 * s)
+	u.txt.draw(hdc, "Разработчик: Aristocrat (в своём кругу — Старый)", u.txt.font("Segoe UI Semibold", int(13*s), false), cGold,
+		walk.Rectangle{Y: y, Width: b.Width, Height: int(20 * s)}, dtCenter|dtSingle)
 	y += int(30 * s)
 	text := "Шифрует DNS и обходит блокировки провайдера прямо на компьютере — без VPN-подписок и своих серверов.\n\n" +
 		"Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) " +
 		"не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через " +
 		"бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor. " +
-		"Российские и казахстанские сайты всегда открываются с вашим настоящим IP.\n\n" +
+		"Российские и Казахстанские сайты всегда открываются с вашим настоящим IP.\n\n" +
 		"Используются: wireguard-go, gVisor, Tor и lyrebird. Лицензия MIT."
 	u.txt.draw(hdc, text, u.txt.font("Segoe UI", int(13*s), false), cText,
 		walk.Rectangle{X: int(30 * s), Y: y, Width: b.Width - int(60*s), Height: b.Height - y - int(16*s)}, dtCenter|dtWord)

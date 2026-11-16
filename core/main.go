@@ -39,7 +39,7 @@ const appName = "Obhod" // имя папки данных (не меняется
 // appTitle — название программы для пользователя.
 const appTitle = "Aristocrat NET"
 
-var appVersion = "0.9.2" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.9.4" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 

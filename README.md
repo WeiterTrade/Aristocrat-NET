@@ -105,7 +105,7 @@ base64 -w0 release.jks > release.jks.b64
 ```
 core/        ядро на Go (общее для всех платформ): прокси, обход DPI, DoH, управление Tor, веб-интерфейс
 android/     приложение для Android/TV (Java): VpnService + hev-socks5-tunnel + tor-android + ядро
-packaging/   установщик Windows (NSIS), пакеты Linux (nfpm → deb/rpm)
+packaging/   установщик Windows (Inno Setup), пакеты Linux (nfpm → deb/rpm)
 scripts/     загрузка Tor Expert Bundle, сборка нативных частей Android
 assets/      иконки
 .github/workflows/build.yml — сборка всего

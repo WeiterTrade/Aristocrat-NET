@@ -407,6 +407,7 @@ func (u *nativeUI) styleNatives() {
 		st := win.GetWindowLong(h, win.GWL_STYLE)
 		win.SetWindowLong(h, win.GWL_STYLE, st&^win.WS_BORDER)
 		win.SetWindowPos(h, 0, 0, 0, 0, 0, win.SWP_FRAMECHANGED|win.SWP_NOMOVE|win.SWP_NOSIZE|win.SWP_NOZORDER)
+		u.styleEditMenu(h) // правая кнопка — меню в стиле программы
 	}
 }
 

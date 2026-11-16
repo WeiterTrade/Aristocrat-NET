@@ -20,6 +20,7 @@ type popItem struct {
 	sep              bool // разделитель
 	primary, danger  bool // кнопка (диалог) / красный пункт
 	check, checked   bool // флажок «Запомнить выбор»
+	disabled         bool // недоступный пункт (серый)
 	button           bool // кнопка внизу диалога (а не строка меню)
 	act              func()
 	r                walk.Rectangle
@@ -30,6 +31,8 @@ type popup struct {
 	u      *nativeUI
 	hwnd   win.HWND
 	dialog bool   // диалог (по центру окна, окно программы недоступно) или меню
+	down   bool   // меню раскрывается вниз от курсора (контекстное меню), иначе — вверх (трей)
+	header bool   // шапка с логотипом (меню трея)
 	title  string // заголовок диалога
 	text   string // текст диалога
 	items  []*popItem
@@ -138,7 +141,7 @@ func popupProc(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
 
 func (p *popup) hit(x, y int) int {
 	for i, it := range p.items {
-		if !it.sep && inRect(it.r, x, y) {
+		if !it.sep && !it.disabled && inRect(it.r, x, y) {
 			return i
 		}
 	}
@@ -179,7 +182,7 @@ func (p *popup) layout() {
 		if p.text != "" {
 			y += p.u.textHeight(p.text, p.u.txt.font("Segoe UI", int(13*s), false), w-2*pad-int(12*s)) + int(12*s)
 		}
-	} else {
+	} else if p.header {
 		y += int(34 * s) // шапка: логотип и название
 	}
 	var btns []*popItem
@@ -249,7 +252,7 @@ func (p *popup) paint(hdc win.HDC) {
 			}
 		}
 	}
-	if !p.dialog && p.u.logoImg != nil {
+	if p.header && p.u.logoImg != nil {
 		lr := walk.Rectangle{X: int(14 * s), Y: int(12 * s), Width: int(24 * s), Height: int(24 * s)}
 		drawImageScaled(img, p.u.logoImg, lr)
 	}
@@ -269,7 +272,7 @@ func (p *popup) paint(hdc win.HDC) {
 			hh := p.u.textHeight(p.text, f, p.w-2*pad-int(12*s))
 			t.draw(o.dc, p.text, f, cText, walk.Rectangle{X: pad + int(6*s), Y: y, Width: p.w - 2*pad - int(12*s), Height: hh}, dtWord)
 		}
-	} else {
+	} else if p.header {
 		f := t.font("Segoe UI Semibold", int(14*s), false)
 		r := walk.Rectangle{X: int(46 * s), Y: int(10 * s), Width: p.w, Height: int(28 * s)}
 		w1, _ := t.measure(o.dc, "Aristocrat ", f)
@@ -292,6 +295,9 @@ func (p *popup) paint(hdc win.HDC) {
 			col := cText
 			if it.danger {
 				col = cDanger
+			}
+			if it.disabled {
+				col = cSteel
 			}
 			r := it.r
 			r.X += int(14 * s)
@@ -338,8 +344,16 @@ func (p *popup) show(x, y int) {
 		procGetWindowRect.Call(uintptr(p.u.mw.Handle()), uintptr(unsafe.Pointer(&r)))
 		x = int(r.Left+r.Right)/2 - p.w/2
 		y = int(r.Top+r.Bottom)/2 - p.h/2
+	} else if p.down {
+		// контекстное меню — вниз и вправо от курсора; у края экрана — в другую сторону
+		if x+p.w > int(work.Right) {
+			x -= p.w
+		}
+		if y+p.h > int(work.Bottom) {
+			y -= p.h
+		}
 	} else {
-		// меню — над курсором (панель задач обычно внизу), не выходя за экран
+		// меню трея — над курсором (панель задач обычно внизу), не выходя за экран
 		x -= p.w - int(8*s)
 		y -= p.h
 	}
@@ -390,7 +404,7 @@ func (u *nativeUI) trayMenu() {
 	if u.a.eng.Running() {
 		toggle = "Выключить обход"
 	}
-	p := &popup{u: u, items: []*popItem{
+	p := &popup{u: u, header: true, items: []*popItem{
 		{label: "Открыть " + appTitle, act: u.showWindow},
 		{label: toggle, act: u.toggle},
 		{sep: true},
@@ -424,4 +438,70 @@ func (u *nativeUI) askClose() {
 		{label: "Свернуть в трей", button: true, primary: true, act: func() { save("tray"); u.hideToTray() }},
 	}
 	p.show(0, 0)
+}
+
+// ---------------------------------------------------------------------------
+// Контекстное меню полей ввода (вместо системного «Отменить / Вырезать / Копировать…»).
+
+var (
+	editOldProc = map[win.HWND]uintptr{}
+	editProc    uintptr
+	activeUI    *nativeUI
+)
+
+// styleEditMenu подменяет обработчик окна поля ввода: правая кнопка — своё меню.
+func (u *nativeUI) styleEditMenu(h win.HWND) {
+	activeUI = u
+	if editProc == 0 {
+		editProc = syscall.NewCallback(editSubProc)
+	}
+	if _, ok := editOldProc[h]; ok {
+		return
+	}
+	editOldProc[h] = win.SetWindowLongPtr(h, win.GWLP_WNDPROC, editProc)
+}
+
+func editSubProc(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
+	if msg == win.WM_CONTEXTMENU && activeUI != nil {
+		x, y := int(int16(lp&0xffff)), int(int16((lp>>16)&0xffff))
+		if x == -1 && y == -1 { // с клавиатуры — у курсора мыши
+			var pt win.POINT
+			win.GetCursorPos(&pt)
+			x, y = int(pt.X), int(pt.Y)
+		}
+		activeUI.editMenu(hwnd, x, y)
+		return 0
+	}
+	return win.CallWindowProc(editOldProc[hwnd], hwnd, msg, wp, lp)
+}
+
+func (u *nativeUI) editMenu(h win.HWND, x, y int) {
+	win.SetFocus(h)
+	ro := win.GetWindowLong(h, win.GWL_STYLE)&win.ES_READONLY != 0
+	var from, to uint32
+	win.SendMessage(h, win.EM_GETSEL, uintptr(unsafe.Pointer(&from)), uintptr(unsafe.Pointer(&to)))
+	sel := to > from
+	empty := win.SendMessage(h, win.WM_GETTEXTLENGTH, 0, 0) == 0
+	canUndo := win.SendMessage(h, win.EM_CANUNDO, 0, 0) != 0
+	send := func(m uint32, wp, lp uintptr) func() {
+		return func() {
+			win.SetForegroundWindow(u.mw.Handle())
+			win.SetFocus(h)
+			win.SendMessage(h, m, wp, lp)
+		}
+	}
+	var items []*popItem
+	if !ro {
+		items = append(items, &popItem{label: "Отменить", disabled: !canUndo, act: send(win.EM_UNDO, 0, 0)}, &popItem{sep: true},
+			&popItem{label: "Вырезать", disabled: !sel, act: send(win.WM_CUT, 0, 0)})
+	}
+	items = append(items, &popItem{label: "Копировать", disabled: !sel, act: send(win.WM_COPY, 0, 0)})
+	if !ro {
+		items = append(items,
+			&popItem{label: "Вставить", act: send(win.WM_PASTE, 0, 0)},
+			&popItem{label: "Удалить", disabled: !sel, act: send(win.WM_CLEAR, 0, 0)})
+	}
+	items = append(items, &popItem{sep: true}, &popItem{label: "Выделить всё", disabled: empty, act: send(win.EM_SETSEL, 0, ^uintptr(0))})
+	p := &popup{u: u, down: true, items: items}
+	p.show(x, y)
 }

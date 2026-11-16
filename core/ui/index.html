@@ -104,6 +104,11 @@
            padding:8px 18px; border-radius:999px; font-weight:600; }
 
   /* ---- О программе ---- */
+  .cmenu { position:fixed; z-index:50; min-width:190px; padding:6px; background:linear-gradient(var(--card),var(--bg)); border:1px solid var(--line); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+  .cmenu div { padding:8px 12px; border-radius:8px; font-size:13px; color:var(--text); cursor:pointer; }
+  .cmenu div:hover { background:var(--hover); }
+  .cmenu div.off { color:var(--steel); cursor:default; background:none; }
+  .cmenu hr { border:0; border-top:1px solid var(--line); margin:4px 6px; }
   .modal { position:fixed; inset:0; background:rgba(5,8,18,.75); display:flex; align-items:center; justify-content:center; padding:16px; }
   .modal .card { max-width:400px; width:100%; background:linear-gradient(var(--grad),var(--bg)); border:1px solid var(--line); border-radius:18px; padding:20px; }
   .modal p { margin:8px 0; font-size:13px; color:var(--text); }
@@ -152,8 +157,9 @@
   <div class="card">
     <div style="text-align:center"><img src="/brand.png" alt="Aristocrat NET" style="width:220px"></div>
     <p style="text-align:center"><span id="aboutVer" class="hint"></span></p>
+    <p style="text-align:center;color:var(--gold);font-weight:600">Разработчик: Aristocrat (в своём кругу — Старый)</p>
     <p>Шифрует DNS и обходит блокировки провайдера прямо на вашем устройстве — без VPN-подписок и своих серверов.</p>
-    <p>Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor. Российские и казахстанские сайты всегда открываются с вашим настоящим IP.</p>
+    <p>Сначала соединение идёт напрямую: начало защищённого соединения нарезается так, что фильтр провайдера (DPI) не узнаёт сайт. Если сайт заблокирован по IP или обход не помог — соединение автоматически идёт через бесплатный Cloudflare WARP (сайт видит IP Cloudflare, а не ваш) или сеть Tor. Российские и Казахстанские сайты всегда открываются с вашим настоящим IP.</p>
     <p class="hint">Используются: wireguard-go, gVisor, Tor, lyrebird, hev-socks5-tunnel. Лицензия MIT.</p>
     <div class="btns" style="justify-content:flex-end"><button class="btn" id="aboutClose">Закрыть</button></div>
   </div>
@@ -380,6 +386,39 @@ function checkPrompts(s) {
     }, 0);
   }
 }
+// Своё контекстное меню (вместо меню браузера/WebKit): для полей ввода — правка текста.
+let cmenu = null;
+function closeMenu() { if (cmenu) { cmenu.remove(); cmenu = null; } }
+document.addEventListener('contextmenu', e => {
+  e.preventDefault(); closeMenu();
+  const el = e.target.closest('input,textarea'), editable = el && !el.readOnly && !el.disabled;
+  const selText = el ? el.value.substring(el.selectionStart || 0, el.selectionEnd || 0) : String(getSelection());
+  const items = [];
+  const copy = async () => { try { await navigator.clipboard.writeText(selText); } catch { document.execCommand('copy'); } };
+  if (editable) items.push(['Вырезать', !!selText, async () => { await copy(); el.setRangeText('', el.selectionStart, el.selectionEnd, 'end'); el.dispatchEvent(new Event('input')); }]);
+  items.push(['Копировать', !!selText, copy]);
+  if (editable) items.push(['Вставить', true, async () => {
+    try { const t = await navigator.clipboard.readText(); el.focus(); el.setRangeText(t, el.selectionStart, el.selectionEnd, 'end'); el.dispatchEvent(new Event('input')); }
+    catch { toast('Вставьте сочетанием Ctrl+V'); el.focus(); }
+  }]);
+  items.push(null, ['Выделить всё', true, () => { if (el) { el.focus(); el.select(); } else { const r = document.createRange(); r.selectNodeContents(document.body); getSelection().removeAllRanges(); getSelection().addRange(r); } }]);
+  if (!el) items.push(null, ['Обновить', true, () => location.reload()]);
+  cmenu = document.createElement('div'); cmenu.className = 'cmenu';
+  items.forEach(it => {
+    if (!it) { cmenu.appendChild(document.createElement('hr')); return; }
+    const d = document.createElement('div'); d.textContent = it[0];
+    if (!it[1]) d.className = 'off'; else d.onmousedown = ev => { ev.preventDefault(); closeMenu(); it[2](); };
+    cmenu.appendChild(d);
+  });
+  document.body.appendChild(cmenu);
+  const w = cmenu.offsetWidth, h = cmenu.offsetHeight;
+  cmenu.style.left = Math.min(e.clientX, innerWidth - w - 4) + 'px';
+  cmenu.style.top = (e.clientY + h > innerHeight ? Math.max(4, e.clientY - h) : e.clientY) + 'px';
+});
+document.addEventListener('mousedown', e => { if (cmenu && !cmenu.contains(e.target)) closeMenu(); });
+window.addEventListener('blur', closeMenu);
+window.addEventListener('scroll', closeMenu, true);
+
 // Крестик окна (Linux): свернуть в трей или выйти.
 window.obhodClose = () => {
   const act = S && S.settings.close_action;
