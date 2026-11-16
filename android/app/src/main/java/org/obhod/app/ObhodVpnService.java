@@ -45,7 +45,8 @@ public class ObhodVpnService extends VpnService {
 
     static final int CORE_PORT = 8881;
     static final String TOR_SOCKS = "127.0.0.1:9077";
-    private static final String MAPDNS = "198.18.0.2";
+    // DNS устройства: запросы уходят в туннель, ядро отвечает настоящими адресами (шифрованный DNS).
+    private static final String VPN_DNS = "1.1.1.1";
     private static final String CHANNEL = "vpn";
 
     // Состояние для экрана (читается MainActivity раз в секунду).
@@ -254,10 +255,12 @@ public class ObhodVpnService extends VpnService {
                     .setSession(getString(R.string.app_name))
                     .setMtu(8500)
                     .addAddress("10.111.222.1", 32)
-                    .addRoute("0.0.0.0", 0)
-                    .addDnsServer(MAPDNS);
+                    .addDnsServer(VPN_DNS);
+            // Весь интернет — через туннель, а домашняя сеть (Chromecast, телевизор, принтер, роутер),
+            // точка доступа и широковещательные запросы поиска устройств — мимо него, как без VPN.
+            for (String[] r : publicRoutes()) b.addRoute(r[0], Integer.parseInt(r[1]));
             try {
-                b.addAddress("fd66:6f62:686f::1", 128).addRoute("::", 0);
+                b.addAddress("fd66:6f62:686f::1", 128).addRoute("2000::", 3); // только глобальные IPv6
             } catch (Exception e) {
                 log("IPv6 недоступен: " + e.getMessage());
             }
@@ -277,7 +280,7 @@ public class ObhodVpnService extends VpnService {
             tun = b.establish();
             if (tun == null) throw new IOException("нет разрешения на VPN");
 
-            // 4. tun2socks. DNS-запросы отвечает mapdns: домены приходят в ядро по имени.
+            // 4. tun2socks. DNS (порт 53) отвечает ядро — настоящими адресами, поэтому работает и раздача интернета.
             File conf = new File(getCacheDir(), "hev.yml");
             String yml = "tunnel:\n"
                     + "  mtu: 8500\n"
@@ -285,12 +288,6 @@ public class ObhodVpnService extends VpnService {
                     + "  port: " + CORE_PORT + "\n"
                     + "  address: 127.0.0.1\n"
                     + "  udp: 'udp'\n"
-                    + "mapdns:\n"
-                    + "  address: " + MAPDNS + "\n"
-                    + "  port: 53\n"
-                    + "  network: 100.64.0.0\n"
-                    + "  netmask: 255.192.0.0\n"
-                    + "  cache-size: 10000\n"
                     + "misc:\n"
                     + "  task-stack-size: 81920\n"
                     + "  log-level: warn\n";
@@ -671,6 +668,43 @@ public class ObhodVpnService extends VpnService {
             ptProc = null;
         }
         ptSocks = "";
+    }
+
+
+    /**
+     * Маршруты VPN: все адреса IPv4, кроме домашних и служебных сетей (10/8, 172.16/12, 192.168/16,
+     * 169.254/16, 100.64/10, 127/8, 0/8, 224/4 — широковещательный поиск устройств, 240/4).
+     * Так Chromecast, Smart TV, принтеры и устройства на точке доступа работают напрямую.
+     */
+    static List<String[]> publicRoutes() {
+        long[][] skip = {
+                {0x00000000L, 8}, {0x0A000000L, 8}, {0x64400000L, 10}, {0x7F000000L, 8}, {0xA9FE0000L, 16},
+                {0xAC100000L, 12}, {0xC0A80000L, 16}, {0xE0000000L, 4}, {0xF0000000L, 4},
+        };
+        List<String[]> out = new ArrayList<>();
+        long cur = 0, end = 1L << 32;
+        java.util.Arrays.sort(skip, (x, y) -> Long.compare(x[0], y[0]));
+        for (long[] sk : skip) {
+            long s0 = sk[0], s1 = sk[0] + (1L << (32 - sk[1]));
+            if (s0 > cur) addRange(out, cur, s0);
+            cur = Math.max(cur, s1);
+        }
+        if (cur < end) addRange(out, cur, end);
+        return out;
+    }
+
+    private static void addRange(List<String[]> out, long from, long to) {
+        while (from < to) {
+            int bits = 32;
+            while (bits > 0) {
+                long size = 1L << (32 - (bits - 1));
+                if (from % size != 0 || from + size > to) break;
+                bits--;
+            }
+            out.add(new String[]{((from >> 24) & 255) + "." + ((from >> 16) & 255) + "." + ((from >> 8) & 255) + "." + (from & 255),
+                    String.valueOf(bits)});
+            from += 1L << (32 - bits);
+        }
     }
 
 }

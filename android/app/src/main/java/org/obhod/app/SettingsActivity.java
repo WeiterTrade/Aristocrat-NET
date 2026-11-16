@@ -91,6 +91,7 @@ public class SettingsActivity extends Activity {
         findViewById(R.id.sendBridges).setOnClickListener(v -> BridgeShare.send(this));
         bindCheck(R.id.keepLocal, "keep_local", Prefs.keepLocal(this));
         bindCheck(R.id.adBlock, "ad_block", Prefs.adBlock(this));
+        findViewById(R.id.youtubeNoAds).setOnClickListener(v -> youtubeNoAds());
         bindCheck(R.id.geoTor, "geo_tor", Prefs.geoTor(this));
         findViewById(R.id.apps).setOnClickListener(v -> pickApps());
         findViewById(R.id.warpReset).setOnClickListener(v -> {
@@ -101,6 +102,27 @@ public class SettingsActivity extends Activity {
         });
         updateAppsInfo();
         route.requestFocus();
+    }
+
+    /** Реклама в роликах YouTube: объяснение и ссылки на клиенты без рекламы со SponsorBlock. */
+    private void youtubeNoAds() {
+        android.app.UiModeManager um = (android.app.UiModeManager) getSystemService(UI_MODE_SERVICE);
+        boolean tv = um != null && um.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
+        AlertDialog.Builder d = new AlertDialog.Builder(this)
+                .setTitle(R.string.yt_title)
+                .setMessage(tv ? R.string.yt_text_tv : R.string.yt_text_phone)
+                .setPositiveButton(R.string.yt_open_smarttube, (x, w) -> openLink("https://github.com/yuliskov/SmartTube/releases/latest"))
+                .setNeutralButton(R.string.recv_cancel, null);
+        if (!tv) d.setNegativeButton(R.string.yt_open_tubular, (x, w) -> openLink("https://github.com/polymorphicshade/Tubular/releases/latest"));
+        d.show();
+    }
+
+    private void openLink(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)));
+        } catch (Exception e) {
+            Toast.makeText(this, url, Toast.LENGTH_LONG).show();
+        }
     }
 
     private void bindCheck(int id, String key, boolean value) {

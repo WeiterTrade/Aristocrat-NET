@@ -28,8 +28,14 @@
     <string name="log_label_row">Журнал  ›</string>
     <string name="other_label">Другие</string>
     <string name="ads_label">Реклама</string>
+    <string name="yt_button">YouTube без рекламы</string>
+    <string name="yt_title">YouTube без рекламы</string>
+    <string name="yt_text_tv">Ролики YouTube и реклама в них приходят с одних и тех же серверов Google по зашифрованному соединению, поэтому их не разделить на уровне сети — так не умеет ни одна программа, включая AdGuard.\n\nНа телевизоре рекламу убирает SmartTube — бесплатное приложение YouTube для ТВ: без рекламы, со SponsorBlock (пропуск спонсорских вставок), вход в свой аккаунт Google.\n\nСкачать: github.com/yuliskov/SmartTube (на телевизоре — через приложение Downloader или с телефона кнопкой ниже).</string>
+    <string name="yt_text_phone">Ролики YouTube и реклама в них приходят с одних и тех же серверов Google по зашифрованному соединению, поэтому их не разделить на уровне сети — так не умеет ни одна программа, включая AdGuard.\n\nНа телефоне рекламу убирает Tubular — бесплатный клиент YouTube: без рекламы, со SponsorBlock, фоновое воспроизведение и скачивание.\n\nДля телевизора — SmartTube.</string>
+    <string name="yt_open_tubular">Скачать Tubular</string>
+    <string name="yt_open_smarttube">Скачать SmartTube</string>
     <string name="ads_block">Блокировать рекламу — на сайтах и в приложениях</string>
-    <string name="ads_hint">Баннеры, всплывающие окна, реклама в играх и приложениях (в том числе букмекеров), слежка. Список AdGuard обновляется сам раз в сутки. Рекламу внутри роликов YouTube так не убрать — для телевизора есть SmartTube.</string>
+    <string name="ads_hint">Баннеры, всплывающие окна, реклама в играх и приложениях (в том числе букмекеров), слежка. Список AdGuard обновляется сам раз в сутки. Рекламу внутри роликов YouTube так не убрать — см. «YouTube без рекламы».</string>
     <string name="copy">Копировать</string>
     <string name="copied">Журнал скопирован</string>
     <string name="custom_row">Свои мосты  ›</string>
