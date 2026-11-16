@@ -148,11 +148,52 @@ func (u *nativeUI) buildPage(id string) sPage {
 			{kind: kText, title: "Мосты WebTunnel или obfs4 из Telegram-бота @GetBridgesBot, по одному в строке. " +
 				"Перед запуском программа проверит их и возьмёт самые быстрые."},
 			{kind: kNative, native: u.teBridges, h: 230},
-			{kind: kButtons, btns: []*sBtn{{label: "Сохранить", primary: true, act: func() {
-				text := strings.ReplaceAll(u.teBridges.Text(), "\r\n", "\n")
-				u.apply(func(s *Settings) { s.CustomBridges = text })
-				u.showToast("Мосты сохранены")
-			}}}},
+			{kind: kButtons, btns: []*sBtn{
+				{label: "Сохранить", primary: true, act: func() {
+					text := strings.ReplaceAll(u.teBridges.Text(), "\r\n", "\n")
+					u.apply(func(s *Settings) { s.CustomBridges = text })
+					u.showToast("Мосты сохранены")
+				}},
+				{label: "Получить мосты", act: func() { openLink(bridgesBotURL) }},
+			}},
+			{kind: kButtons, btns: []*sBtn{{label: "Отправить на другое устройство", act: u.openSend}}},
+		}}
+	case "send":
+		p := sPage{title: "Отправить мосты", parent: "custom", items: []*sItem{
+			{kind: kText, title: "Откройте Aristocrat NET на телевизоре, телефоне или другом компьютере в этой же сети Wi-Fi " +
+				"и выберите устройство. На нём появится вопрос, принять ли мосты."},
+		}}
+		if u.searching {
+			p.items = append(p.items, &sItem{kind: kText, title: "Ищу устройства…"})
+		} else if len(u.devices) == 0 {
+			p.items = append(p.items, &sItem{kind: kText, title: "Устройства не найдены. Проверьте, что программа открыта на втором устройстве " +
+				"и оба подключены к одному роутеру (в гостевой сети устройства не видят друг друга)."})
+		} else {
+			p.items = append(p.items, section("Устройства в сети"))
+			for _, d := range u.devices {
+				d := d
+				p.items = append(p.items, row(d.Name, d.IP, "", func() { u.sendTo(d) }))
+			}
+		}
+		p.items = append(p.items, &sItem{kind: kButtons, btns: []*sBtn{{label: "Искать снова", act: u.openSend}}})
+		return p
+	case "welcome":
+		return sPage{title: "Получите мосты Tor", parent: "root", items: []*sItem{
+			{kind: kText, title: "Мосты Tor нужны, чтобы Tor подключался в России. Бот @GetBridgesBot в Telegram пришлёт их бесплатно: " +
+				"скопируйте присланные мосты и вставьте их на странице «Свои мосты»."},
+			{kind: kText, title: "В Казахстане мосты не обязательны — всё работает и без них. Мосты можно добавить и позже: Настройки → Свои мосты."},
+			{kind: kButtons, btns: []*sBtn{
+				{label: "Получить мосты", primary: true, act: func() {
+					u.a.setBridgesAsked()
+					openLink(bridgesBotURL)
+					u.page, u.scroll = "custom", 0
+					u.showPage()
+				}},
+				{label: "Я в Казахстане", act: func() {
+					u.a.setBridgesAsked()
+					u.setView(viewHome)
+				}},
+			}},
 		}}
 	case "test":
 		label := "Проверить"
@@ -244,9 +285,15 @@ func (u *nativeUI) buildPage(id string) sPage {
 		)
 	}
 	learned := len(u.a.eng.Learned()) + len(u.a.eng.Blocked())
+	adSub := "Баннеры, всплывающие окна, реклама в приложениях и слежка"
+	if st.AdBlock {
+		adSub += fmt.Sprintf(". Заблокировано: %d", u.a.ads.Count())
+	}
 	items = append(items,
+		section("Реклама"),
+		toggleRow("Блокировать рекламу", adSub, st.AdBlock, func() { u.apply(func(s *Settings) { s.AdBlock = !s.AdBlock }) }),
 		section("Правила"),
-		toggleRow("Российские и казахстанские сайты — напрямую", "С настоящим IP даже через Tor и WARP: банки, госуслуги, Яндекс, VK",
+		toggleRow("Российские и Казахстанские сайты — напрямую", "С настоящим IP даже через Tor и WARP: банки, госуслуги, Яндекс, VK",
 			st.KeepLocal, func() { u.apply(func(s *Settings) { s.KeepLocal = !s.KeepLocal }) }),
 		toggleRow("Spotify через Tor в России", "Сервисы, закрытые для России, — через Tor даже в «Авто»",
 			st.GeoTor, func() { u.apply(func(s *Settings) { s.GeoTor = !s.GeoTor }) }),
@@ -301,7 +348,11 @@ func (u *nativeUI) goBack() {
 		u.aboutFromSettings = false
 		u.setView(viewSettings)
 	case u.view == viewSettings && u.page != "root" && u.page != "":
-		u.page, u.scroll = "root", 0
+		parent := u.buildPage(u.page).parent
+		if parent == "" {
+			parent = "root"
+		}
+		u.page, u.scroll = parent, 0
 		u.showPage()
 	default:
 		u.setView(viewHome)
@@ -873,4 +924,64 @@ func (u *nativeUI) settingsMove(x, y int, _ walk.MouseButton) {
 		u.setHover = i
 		u.setPane.Invalidate()
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Передача мостов
+
+func (u *nativeUI) openSend() {
+	if bridgeCount(u.a.settings().CustomBridges) == "нет" {
+		walk.MsgBox(u.mw, appTitle, "Сначала добавьте свои мосты и нажмите «Сохранить».", walk.MsgBoxIconInformation)
+		return
+	}
+	u.page, u.scroll = "send", 0
+	if u.searching {
+		u.showPage()
+		return
+	}
+	u.searching, u.devices = true, nil
+	u.showPage()
+	go func() {
+		d := u.a.share.Discover(2500 * time.Millisecond)
+		u.mw.Synchronize(func() {
+			u.searching, u.devices = false, d
+			if u.page == "send" {
+				u.showPage()
+			}
+		})
+	}()
+}
+
+func (u *nativeUI) sendTo(d ShareDevice) {
+	u.showToast("Отправляю на " + d.Name + "…")
+	go func() {
+		err := u.a.sendBridges(d.IP)
+		u.mw.Synchronize(func() {
+			if err != nil {
+				walk.MsgBox(u.mw, appTitle, "Не удалось отправить: "+err.Error(), walk.MsgBoxIconWarning)
+				return
+			}
+			u.showToast("Мосты отправлены — подтвердите на устройстве")
+		})
+	}()
+}
+
+// askOffer — пришли мосты с другого устройства.
+func (u *nativeUI) askOffer() {
+	o := u.a.shareOffer()
+	if o == nil {
+		return
+	}
+	u.showWindow()
+	msg := fmt.Sprintf("Устройство «%s» прислало мостов: %d.\n\nПринять? Ваши свои мосты будут заменены.", o.From, o.Count)
+	accept := walk.MsgBox(u.mw, "Получены мосты", msg, walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) == win.IDYES
+	go func() {
+		u.a.answerShare(o.ID, accept)
+		u.mw.Synchronize(func() {
+			if accept {
+				u.showToast("Мосты сохранены")
+			}
+			u.showPage()
+		})
+	}()
 }

@@ -26,6 +26,7 @@ type Engine struct {
 	Tor       *Tor
 	Warp      *Warp
 	Local     *Local        // российские и казахстанские сайты — напрямую; Spotify в России — через Tor
+	Ads       *AdBlock      // блокировка рекламы (nil — выключена)
 	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
 	Timeout   time.Duration // ожидание ответа сервера на каждый метод
 	TorWait   time.Duration // сколько ждать подключения Tor при фолбэке
@@ -390,6 +391,9 @@ func (e *Engine) handle(c net.Conn) {
 // connect устанавливает первое соединение: напрямую или через запасной путь.
 // via — имя пути (StratTor/StratWarp) или "" для прямого соединения.
 func (e *Engine) connect(host string, port int) (net.Conn, string, error) {
+	if e.Ads.Blocked(host) {
+		return nil, "", errAdBlocked
+	}
 	u, err := e.viaFirst(host)
 	if err != nil {
 		e.markBlocked(host, err.Error())
@@ -424,6 +428,10 @@ func (e *Engine) connect(host string, port int) (net.Conn, string, error) {
 }
 
 func badGateway(c net.Conn, host string, err error) {
+	if errors.Is(err, errAdBlocked) { // реклама: пустой ответ, без страницы ошибки
+		_, _ = io.WriteString(c, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+		return
+	}
 	msg := fmt.Sprintf("Обход: не удалось подключиться к %s — %v", host, err)
 	fmt.Fprintf(c, "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(msg), msg)
 }
@@ -507,7 +515,9 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 	up, via, err := e.connect(host, port)
 	if err != nil {
 		code := byte(5) // connection refused
-		if errors.Is(err, errConnect) {
+		if errors.Is(err, errAdBlocked) {
+			code = 2 // запрещено правилами
+		} else if errors.Is(err, errConnect) {
 			code = 4 // host unreachable
 		}
 		_, _ = c.Write([]byte{5, code, 0, 1, 0, 0, 0, 0, 0, 0})

@@ -132,6 +132,14 @@
 </section>
 
 <!-- О программе -->
+<div class="modal hidden" id="welcome">
+  <div class="card">
+    <h3 style="margin:0 0 8px;color:var(--goldl)">Получите мосты Tor</h3>
+    <p>Мосты Tor нужны, чтобы Tor подключался в России. Бот @GetBridgesBot в Telegram пришлёт их бесплатно: скопируйте присланные мосты и вставьте их в «Свои мосты».</p>
+    <p class="hint">В Казахстане мосты не обязательны — всё работает и без них. Мосты можно добавить и позже: Настройки → Свои мосты.</p>
+    <div class="btns" style="justify-content:flex-end"><button class="btn" id="wGet">Получить мосты</button><button class="btn ghost" id="wKz">Я в Казахстане</button></div>
+  </div>
+</div>
 <div class="modal hidden" id="about">
   <div class="card">
     <div style="text-align:center"><img src="/brand.png" alt="Aristocrat NET" style="width:220px"></div>
@@ -202,7 +210,7 @@ const radios = {
   bridges: ['Мосты Tor', s => s.bridges.map(b => Object.assign({}, b, { hint: b.id === 'auto' ? 'Сначала snowflake, при неудаче — obfs4 и meek; свои мосты — всегда' : b.id === 'custom' ? 'Только мосты из Telegram-бота @GetBridgesBot' : '' })), 'bridges'],
   country: ['Страна IP через Tor', s => s.countries, 'tor_country'],
 };
-const titles = { custom: 'Свои мосты', test: 'Проверить сайт', sites: 'Подобранные сайты', port: 'Порт прокси', logs: 'Журнал' };
+const titles = { send: 'Отправить мосты', custom: 'Свои мосты', test: 'Проверить сайт', sites: 'Подобранные сайты', port: 'Порт прокси', logs: 'Журнал' };
 
 function renderPage() {
   if (!S || !page) return;
@@ -232,8 +240,11 @@ function renderPage() {
         row({ t: 'Свои мосты', v: bridgeCount(st.custom_bridges) || 'нет', nav: 1, a: 'go:custom' }),
         row({ t: 'Страна IP через Tor', v: country, nav: 1, a: 'go:country' }),
       ]) : '') +
+      sec('Реклама', [
+        row({ t: 'Блокировать рекламу', s: 'Баннеры, всплывающие окна, реклама в приложениях и слежка' + (st.adblock && s.ads ? '. Заблокировано: ' + s.ads.blocked : ''), toggle: st.adblock, a: 'tg:adblock' }),
+      ]) +
       sec('Правила', [
-        row({ t: 'Российские и казахстанские сайты — напрямую', s: 'С настоящим IP даже через Tor и WARP: банки, госуслуги, Яндекс, VK', toggle: st.keep_local, a: 'tg:keep_local' }),
+        row({ t: 'Российские и Казахстанские сайты — напрямую', s: 'С настоящим IP даже через Tor и WARP: банки, госуслуги, Яндекс, VK', toggle: st.keep_local, a: 'tg:keep_local' }),
         row({ t: 'Spotify через Tor в России', s: 'Сервисы, закрытые для России, — через Tor даже в «Авто»', toggle: st.geo_tor, a: 'tg:geo_tor' }),
       ]) +
       sec('Инструменты', [
@@ -255,12 +266,14 @@ function renderPage() {
   if (el.dataset.p === page) { if (page === 'sites') renderSites(); return; } // поля ввода не перерисовываем
   el.dataset.p = page;
   if (page === 'custom') el.innerHTML = `<div class="note">Мосты WebTunnel или obfs4 из Telegram-бота @GetBridgesBot, по одному в строке. Перед запуском программа проверит их и возьмёт самые быстрые.</div>
-      <textarea class="field" id="custom" rows="10" spellcheck="false"></textarea><div class="btns"><button class="btn" data-a="savecustom">Сохранить</button></div>`;
+      <textarea class="field" id="custom" rows="10" spellcheck="false"></textarea><div class="btns"><button class="btn" data-a="savecustom">Сохранить</button><button class="btn ghost" data-a="getbridges">Получить мосты</button></div>
+      <div class="btns"><button class="btn ghost" data-a="go:send">Отправить на другое устройство</button></div>`;
   if (page === 'custom') $('custom').value = st.custom_bridges || '';
   if (page === 'test') el.innerHTML = `<div class="note">Программа попробует открыть сайт всеми способами: напрямую, каждым методом обхода, через WARP и Tor.</div>
       <input class="field" id="host" placeholder="например, youtube.com" spellcheck="false"><div class="btns"><button class="btn" id="test" data-a="test">${testing ? 'Проверяю…' : 'Проверить'}</button></div><div id="testOut">${testHtml}</div>`;
   if (page === 'port') el.innerHTML = `<input class="field" id="port" type="number" min="1024" max="65535" value="${st.port}">
       <div class="btns"><button class="btn" data-a="saveport">Сохранить</button></div><div class="note">Если «Системный прокси» выключен, укажите в браузере прокси 127.0.0.1 и этот порт (HTTP или SOCKS5).</div>`;
+  if (page === 'send') { el.innerHTML = `<div class="note">Откройте Aristocrat NET на телевизоре, телефоне или другом компьютере в этой же сети Wi-Fi и выберите устройство. На нём появится вопрос, принять ли мосты.</div><div id="devs"></div><div class="btns"><button class="btn ghost" data-a="discover">Искать снова</button></div>`; discover(); }
   if (page === 'sites') { el.innerHTML = `<div class="btns"><button class="btn ghost" data-a="forgetall">Забыть все</button></div><div class="list" id="sites"></div>`; renderSites(); }
   if (page === 'logs') { el.innerHTML = `<div class="btns"><button class="btn" data-a="copylog">Копировать</button><button class="btn ghost" data-a="clearlog">Очистить вид</button></div><pre class="log" id="logs"></pre>`; loadLogs(); }
 }
@@ -289,7 +302,7 @@ function go(p) {
   window.scrollTo(0, 0);
   if (p) renderPage();
 }
-function back() { if (!page) return; go(page === 'root' ? null : 'root'); }
+function back() { if (!page) return; go(page === 'root' ? null : page === 'send' ? 'custom' : 'root'); }
 
 async function save(patch) {
   try { render(await api('settings', Object.assign({}, S.settings, patch))); } catch (e) { toast(e.message); }
@@ -319,7 +332,40 @@ $('page').addEventListener('click', async e => {
   }
   else if (a === 'clearlog') { logCleared = (await api('logs')).length; loadLogs(); }
   else if (a === 'test') runTest();
+  else if (a === 'getbridges') window.open(BOT, '_blank');
+  else if (a === 'discover') discover();
+  else if (cmd === 'sendto') {
+    try { await api('share/send', { ip: k }); toast('Мосты отправлены — подтвердите на устройстве'); } catch (e) { toast('Не удалось отправить: ' + e.message); }
+  }
 });
+
+const BOT = 'https://t.me/GetBridgesBot';
+async function discover() {
+  const d = $('devs'); if (!d) return;
+  if (!bridgeCount(S.settings.custom_bridges)) { d.innerHTML = '<div class="note">Сначала добавьте свои мосты и нажмите «Сохранить».</div>'; return; }
+  d.innerHTML = '<div class="note">Ищу устройства…</div>';
+  let list = [];
+  try { list = await api('share/discover'); } catch {}
+  if (!$('devs')) return;
+  $('devs').innerHTML = list.length ? sec('Устройства в сети', list.map(x => row({ t: x.name, s: x.ip, nav: 1, a: 'sendto:' + x.ip })))
+    : '<div class="note">Устройства не найдены. Проверьте, что программа открыта на втором устройстве и оба подключены к одному роутеру (в гостевой сети устройства не видят друг друга).</div>';
+}
+
+// Первый запуск — предложение получить мосты; присланные с другого устройства мосты — с подтверждением.
+let welcomed = false, offerAsked = '';
+function checkPrompts(s) {
+  if (s.ask_bridges && !welcomed) { welcomed = true; $('welcome').classList.remove('hidden'); }
+  const o = s.share_offer;
+  if (o && o.id !== offerAsked) {
+    offerAsked = o.id;
+    setTimeout(async () => {
+      const ok = confirm('Устройство «' + o.from + '» прислало мостов: ' + o.count + '.\n\nПринять? Ваши свои мосты будут заменены.');
+      try { render(await api('share/answer', { id: o.id, accept: ok })); if (ok) toast('Мосты сохранены'); } catch {}
+    }, 0);
+  }
+}
+$('wGet').onclick = async () => { $('welcome').classList.add('hidden'); window.open(BOT, '_blank'); try { await api('asked', {}); } catch {} go('custom'); };
+$('wKz').onclick = async () => { $('welcome').classList.add('hidden'); try { render(await api('asked', {})); } catch {} };
 $('page').addEventListener('keydown', e => { if (e.target.id === 'host' && e.key === 'Enter') runTest(); });
 
 async function runTest() {
@@ -343,7 +389,7 @@ async function runTest() {
   if ($('testOut')) { $('testOut').innerHTML = testHtml; $('test').disabled = false; $('test').textContent = 'Проверить'; }
 }
 
-function render(s) { S = s; renderHome(s); renderPage(); }
+function render(s) { S = s; renderHome(s); renderPage(); checkPrompts(s); }
 
 async function loadIP() {
   $('ip').innerHTML = 'Ваш IP: <b>…</b>';

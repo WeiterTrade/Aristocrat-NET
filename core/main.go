@@ -14,6 +14,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -38,7 +39,7 @@ const appName = "Obhod" // имя папки данных (не меняется
 // appTitle — название программы для пользователя.
 const appTitle = "Aristocrat NET"
 
-var appVersion = "0.8.6" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.9.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -68,17 +69,19 @@ type Settings struct {
 	SysProxy      bool              `json:"sys_proxy"`
 	DoH           string            `json:"doh"`
 	AutoStart     bool              `json:"auto_start"`
-	KeepLocal     bool              `json:"keep_local"` // российские и казахстанские сайты — напрямую, с настоящим IP
-	GeoTor        bool              `json:"geo_tor"`    // в России: Spotify и др. закрытые для России сервисы — через Tor
+	KeepLocal     bool              `json:"keep_local"`    // российские и казахстанские сайты — напрямую, с настоящим IP
+	GeoTor        bool              `json:"geo_tor"`       // в России: Spotify и др. закрытые для России сервисы — через Tor
+	AdBlock       bool              `json:"adblock"`       // блокировать рекламу и слежку
+	BridgesAsked  bool              `json:"bridges_asked"` // при первом запуске уже предлагали получить мосты
 	Learned       map[string]string `json:"learned"`
 	Ver           int               `json:"ver"`
 }
 
-const settingsVer = 4
+const settingsVer = 5
 
 func defaultSettings() Settings {
 	return Settings{Port: 8881, Mode: "auto", Route: RouteAuto, Heavy: HeavyWarpTor, Bridges: "auto",
-		SysProxy: true, DoH: "cloudflare", AutoStart: true, KeepLocal: true, GeoTor: true}
+		SysProxy: true, DoH: "cloudflare", AutoStart: true, KeepLocal: true, GeoTor: true, AdBlock: true}
 }
 
 func (s *Settings) normalize() {
@@ -125,6 +128,8 @@ type App struct {
 	logs     []string
 	proxyErr string
 	torErr   string
+	ads      *AdBlock
+	share    *Share // передача мостов в локальной сети (на ПК; на Android — в приложении)
 	showUI   func() // показать окно программы (нативное окно на Windows, браузер на Linux)
 }
 
@@ -154,6 +159,10 @@ func (a *App) load() {
 	}
 	if a.s.Ver < 3 {
 		a.s.Heavy = HeavyWarpTor
+	}
+	// v5: блокировка рекламы — включена по умолчанию.
+	if a.s.Ver < 5 {
+		a.s.AdBlock = true
 	}
 	a.s.Ver = settingsVer
 	a.s.normalize()
@@ -262,7 +271,7 @@ func (a *App) applySettings(s Settings) error {
 	a.mu.Lock()
 	old := a.s
 	a.s.Port, a.s.Mode, a.s.Route, a.s.SysProxy, a.s.DoH, a.s.AutoStart = s.Port, s.Mode, s.Route, s.SysProxy, s.DoH, s.AutoStart
-	a.s.KeepLocal, a.s.GeoTor = s.KeepLocal, s.GeoTor
+	a.s.KeepLocal, a.s.GeoTor, a.s.AdBlock = s.KeepLocal, s.GeoTor, s.AdBlock
 	a.s.Bridges, a.s.CustomBridges, a.s.Heavy, a.s.TorCountry = s.Bridges, s.CustomBridges, s.Heavy, s.TorCountry
 	a.mu.Unlock()
 	a.eng.Mode.Store(s.Mode)
@@ -551,31 +560,37 @@ func (a *App) state() map[string]any {
 	ts, tp, te := a.tor.Status()
 	ws, we := a.warp.Status()
 	wep := a.warp.Endpoint()
+	cur := a.settings()
+	ads := map[string]any{"on": cur.AdBlock, "blocked": a.ads.Count(), "rules": a.ads.Rules()}
+	askBridges, offer := a.askBridges(), a.shareOffer()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if te == "" {
 		te = a.torErr
 	}
 	return map[string]any{
-		"on":         a.eng.Running(),
-		"settings":   a.s,
-		"learned":    ls,
-		"blocked":    bs,
-		"strategies": kv(AutoOrder, StratNames),
-		"routes":     kv([]string{RouteAuto, RouteDPI, RouteWarp, RouteTor}, RouteNames),
-		"heavies":    kv(heavyOrder, HeavyNames),
-		"countries":  kv(torCountryOrder, TorCountries),
-		"up_lines":   upLines,
-		"up_warns":   upWarns,
-		"summary":    summary,
-		"warp":       map[string]any{"status": ws, "error": we, "endpoint": wep},
-		"bridges":    kv(bridgeOrder, BridgeNames),
-		"tor":        map[string]any{"status": ts, "progress": tp, "error": te},
-		"active":     a.eng.conns.Load(),
-		"total":      a.eng.total.Load(),
-		"proxy_err":  a.proxyErr,
-		"os":         runtime.GOOS,
-		"version":    appVersion,
+		"on":          a.eng.Running(),
+		"settings":    a.s,
+		"learned":     ls,
+		"blocked":     bs,
+		"strategies":  kv(AutoOrder, StratNames),
+		"routes":      kv([]string{RouteAuto, RouteDPI, RouteWarp, RouteTor}, RouteNames),
+		"heavies":     kv(heavyOrder, HeavyNames),
+		"countries":   kv(torCountryOrder, TorCountries),
+		"up_lines":    upLines,
+		"up_warns":    upWarns,
+		"summary":     summary,
+		"warp":        map[string]any{"status": ws, "error": we, "endpoint": wep},
+		"ads":         ads,
+		"ask_bridges": askBridges,
+		"share_offer": offer,
+		"bridges":     kv(bridgeOrder, BridgeNames),
+		"tor":         map[string]any{"status": ts, "progress": tp, "error": te},
+		"active":      a.eng.conns.Load(),
+		"total":       a.eng.total.Load(),
+		"proxy_err":   a.proxyErr,
+		"os":          runtime.GOOS,
+		"version":     appVersion,
 	}
 }
 
@@ -693,6 +708,38 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		a.eng.Forget(req.Host)
 		writeJSON(w, 200, a.state())
 	}))
+	// Передача мостов в локальной сети и первое предложение получить мосты.
+	mux.HandleFunc("/api/share/discover", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		if a.share == nil {
+			writeJSON(w, 200, []ShareDevice{})
+			return
+		}
+		writeJSON(w, 200, a.share.Discover(2500*time.Millisecond))
+	}))
+	mux.HandleFunc("/api/share/send", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			IP string `json:"ip"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if err := a.sendBridges(req.IP); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	}))
+	mux.HandleFunc("/api/share/answer", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     string `json:"id"`
+			Accept bool   `json:"accept"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		a.answerShare(req.ID, req.Accept)
+		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/asked", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		a.setBridgesAsked()
+		writeJSON(w, 200, a.state())
+	}))
 	mux.HandleFunc("/api/quit", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); shutdown() }()
@@ -721,6 +768,7 @@ func main() {
 		geoipDir   = flag.String("geoip-dir", "", "папка с файлами geoip/geoip6 (Android)")
 		keepLocal  = flag.String("keep-local", "", "российские и казахстанские сайты напрямую: on | off")
 		geoTor     = flag.String("geo-tor", "", "в России Spotify и подобное через Tor: on | off")
+		adblock    = flag.String("adblock", "", "блокировка рекламы: on | off")
 		torLog     = flag.String("tor-log", "", "журнал внешнего Tor (Android): torrc пишет его, ядро читает")
 		stratFlag  = flag.String("strategy", "", "метод обхода DPI: auto | tlsrec | split | ...")
 		dohFlag    = flag.String("doh", "", "DoH: cloudflare | google | quad9")
@@ -756,6 +804,9 @@ func main() {
 	}
 	if *keepLocal != "" {
 		a.s.KeepLocal = *keepLocal == "on"
+	}
+	if *adblock != "" {
+		a.s.AdBlock = *adblock == "on"
 	}
 	if *geoTor != "" {
 		a.s.GeoTor = *geoTor == "on"
@@ -819,6 +870,11 @@ func main() {
 		UserCountry: a.userCountry,
 		Resolve:     a.res.Lookup,
 	}
+	a.ads = NewAdBlock(a.dir, a.logf)
+	a.ads.Enabled = func() bool { return a.settings().AdBlock }
+	a.ads.Fetch = httpFetch(a.eng.dialTLSBypass)
+	a.eng.Ads = a.ads
+	go a.ads.Run()
 	go a.loadGeoIP(*geoipDir)
 	go a.detectCountry()
 	a.eng.BlockQUIC = true
@@ -897,6 +953,8 @@ func main() {
 	srv.Handler = mux
 	go func() { <-sig; shutdown() }()
 
+	a.share = NewShare(a.logf)
+	a.share.Listen()
 	UnsetSystemProxy(a.s.Port) // на случай аварийного завершения прошлой сессии
 	if a.s.AutoStart {
 		if err := a.enable(); err != nil {
@@ -1091,6 +1149,11 @@ func openWindow(url string) {
 			}
 		}
 	}
+	openLink(url)
+}
+
+// openLink открывает ссылку программой по умолчанию (браузер, Telegram для tg://).
+func openLink(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
@@ -1104,6 +1167,9 @@ func openWindow(url string) {
 	_ = cmd.Start()
 }
 
+// Бот Tor Project, который присылает мосты.
+const bridgesBotURL = "https://t.me/GetBridgesBot"
+
 // parsePTSocks разбирает «obfs4=127.0.0.1:1234,webtunnel=127.0.0.1:1235».
 func parsePTSocks(v string) map[string]string {
 	m := map[string]string{}
@@ -1113,4 +1179,58 @@ func parsePTSocks(v string) map[string]string {
 		}
 	}
 	return m
+}
+
+// askBridges — показать при первом запуске предложение получить мосты Tor.
+func (a *App) askBridges() bool {
+	st := a.settings()
+	return !st.BridgesAsked && len(splitBridgeLines(st.CustomBridges)) == 0
+}
+
+func (a *App) setBridgesAsked() {
+	a.mu.Lock()
+	a.s.BridgesAsked = true
+	a.mu.Unlock()
+	a.save()
+}
+
+func (a *App) shareOffer() *ShareOffer {
+	if a.share == nil {
+		return nil
+	}
+	return a.share.Offer()
+}
+
+// sendBridges — отправить свои мосты на устройство в локальной сети.
+func (a *App) sendBridges(ip string) error {
+	if a.share == nil {
+		return errors.New("передача мостов недоступна")
+	}
+	text := strings.Join(splitBridgeLines(a.settings().CustomBridges), "\n")
+	if text == "" {
+		return errors.New("сначала добавьте свои мосты")
+	}
+	return a.share.Send(ip, text)
+}
+
+// answerShare — пользователь принял или отклонил присланные мосты.
+func (a *App) answerShare(id string, accept bool) {
+	if a.share == nil {
+		return
+	}
+	text, ok := a.share.Take(id)
+	if !ok || !accept {
+		return
+	}
+	s := a.settings()
+	s.CustomBridges = text
+	if s.Bridges != "auto" && s.Bridges != "custom" {
+		s.Bridges = "custom"
+	}
+	if err := a.applySettings(s); err != nil {
+		a.logf("Не удалось сохранить мосты: %v", err)
+		return
+	}
+	a.setBridgesAsked()
+	a.logf("Приняты мосты: %d", len(splitBridgeLines(text)))
 }

@@ -427,6 +427,8 @@ type nativeUI struct {
 	teLog     *walk.TextEdit
 	teSites   *walk.TextEdit
 	testing   bool
+	devices   []ShareDevice // найденные в сети устройства (страница «Отправить мосты»)
+	searching bool
 	contentH  int
 	lastPaneW int
 	lastPaneH int
@@ -473,11 +475,23 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 	go u.ticker(done)
 	go u.loadIP()
 
+	// Пришли мосты с другого устройства — спросить, принять ли.
+	if a.share != nil {
+		a.share.mu.Lock()
+		a.share.onOffer = func() { u.mw.Synchronize(u.askOffer) }
+		a.share.mu.Unlock()
+	}
 	u.mw.Starting().Attach(func() {
 		u.applyFrame()
 		u.center()
 		if !show {
 			u.mw.Hide()
+		}
+		// Первый запуск: предложить получить мосты Tor.
+		if a.askBridges() {
+			u.setView(viewSettings)
+			u.page, u.scroll = "welcome", 0
+			u.showPage()
 		}
 	})
 	u.mw.Run()

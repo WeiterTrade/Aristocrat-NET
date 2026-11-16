@@ -157,7 +157,7 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 			client = from
 			mu.Unlock()
 			host, port, hl, ok := udpHeader(buf[:n])
-			if !ok || port == 0 || (e.BlockQUIC && port == 443) {
+			if !ok || port == 0 || (e.BlockQUIC && port == 443) || e.Ads.Blocked(host) {
 				continue
 			}
 			ip := resolve(host)
