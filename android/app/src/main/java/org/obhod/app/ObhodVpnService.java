@@ -60,6 +60,7 @@ public class ObhodVpnService extends VpnService {
     private boolean torBound;
     private Thread worker;
     private static ObhodVpnService instance; // для перезапуска Tor из потока журнала
+    private int torCrashes = 0;              // сколько раз подряд упал процесс :tor
     private int torPhase = 0;                // этап автовыбора мостов: 0 — snowflake, 1 — obfs4/meek
     private File torCoreBin, torLyrebird, torData, torLogFile;
 
@@ -105,9 +106,20 @@ public class ObhodVpnService extends VpnService {
         @Override public void onServiceConnected(ComponentName name, IBinder service) { log("TorService запущен"); }
         @Override public void onServiceDisconnected(ComponentName name) {
             // Процесс :tor упал. Приложение, обход DPI и WARP продолжают работать.
-            torState = "Tor аварийно завершился — подробности в журнале (Настройки)";
-            log(torState);
             dumpTorCrash();
+            torCrashes++;
+            if ("on".equals(state) && torCrashes <= 3) {
+                torState = "Tor перезапускается…";
+                log("Процесс Tor завершился — перезапуск (" + torCrashes + " из 3)");
+                final int phase = torPhase;
+                new Thread(() -> {
+                    try { Thread.sleep(2000); } catch (InterruptedException ignored) { }
+                    restartTor(phase);
+                }, "obhod-tor-revive").start();
+            } else {
+                torState = "Tor аварийно завершился — подробности в журнале (Настройки)";
+                log(torState);
+            }
         }
     };
 
@@ -174,6 +186,7 @@ public class ObhodVpnService extends VpnService {
         error = "";
         torState = "";
         warpState = "";
+        torCrashes = 0;
         try {
             String libDir = getApplicationInfo().nativeLibraryDir;
             File coreBin = new File(libDir, "libobhod.so");
@@ -468,6 +481,8 @@ public class ObhodVpnService extends VpnService {
             torBound = false;
             stopService(new Intent(this, TorService.class));
         }
+        // tor нельзя второй раз запустить в том же процессе: процесс :tor не оставляем «в запасе».
+        killTorProcess();
     }
 
     /**
@@ -545,12 +560,26 @@ public class ObhodVpnService extends VpnService {
     private void killTorProcess() {
         android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
         if (am == null) return;
-        List<android.app.ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
-        if (list == null) return;
-        for (android.app.ActivityManager.RunningAppProcessInfo p : list) {
-            if (p.processName != null && p.processName.endsWith(":tor")) {
-                android.os.Process.killProcess(p.pid);
+        boolean killed = false;
+        // Ждём, пока процесс действительно исчезнет: если сразу привязаться к TorService,
+        // система отдаст его ещё не умершему старому процессу, и Tor «аварийно завершится».
+        for (int i = 0; i < 30; i++) {
+            List<android.app.ActivityManager.RunningAppProcessInfo> list = am.getRunningAppProcesses();
+            boolean alive = false;
+            if (list != null) {
+                for (android.app.ActivityManager.RunningAppProcessInfo p : list) {
+                    if (p.processName != null && p.processName.endsWith(":tor")) {
+                        alive = true;
+                        android.os.Process.killProcess(p.pid);
+                        killed = true;
+                    }
+                }
             }
+            if (!alive) break;
+            try { Thread.sleep(100); } catch (InterruptedException e) { break; }
+        }
+        if (killed) {
+            try { Thread.sleep(300); } catch (InterruptedException ignored) { }
         }
     }
 }

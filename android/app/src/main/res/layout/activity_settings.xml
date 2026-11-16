@@ -88,35 +88,21 @@
                 android:focusable="true"
                 android:minHeight="48dp" />
 
-            <LinearLayout
+            <TextView
                 android:id="@+id/customBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <EditText
-                    android:id="@+id/custom"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="top"
-                    android:hint="@string/custom_hint"
-                    android:inputType="textMultiLine|textNoSuggestions"
-                    android:minLines="3"
-                    android:textSize="12sp"
-                    android:typeface="monospace" />
-
-                <Button
-                    android:id="@+id/saveCustom"
-                    android:background="@drawable/btn_ghost"
-                    android:paddingStart="18dp"
-                    android:paddingEnd="18dp"
-                    android:textColor="@color/gold_light"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/save"
-                    android:textAllCaps="false" />
-            </LinearLayout>
+                android:layout_marginTop="6dp"
+                android:background="@drawable/link_bg"
+                android:clickable="true"
+                android:focusable="true"
+                android:minHeight="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="4dp"
+                android:text="@string/custom_row"
+                android:textColor="@color/text"
+                android:textSize="15sp"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/torLine"

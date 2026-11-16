@@ -29,6 +29,13 @@
     <string name="other_label">Другие</string>
     <string name="copy">Копировать</string>
     <string name="copied">Журнал скопирован</string>
+    <string name="custom_row">Свои мосты  ›</string>
+    <string name="custom_title">Свои мосты</string>
+    <string name="custom_info">Мосты WebTunnel или obfs4 из Telegram-бота @GetBridgesBot — по одному в строке. Перед запуском программа проверит их и оставит самые быстрые.</string>
+    <string name="paste">Вставить</string>
+    <string name="clear">Очистить</string>
+    <string name="bridges_saved">Мосты сохранены</string>
+    <string name="bridges_empty">Буфер обмена пуст</string>
     <string name="notif_channel">Работа VPN</string>
     <string name="notif_text">Обход блокировок включён</string>
     <string name="hint">Сначала соединение идёт напрямую с обходом DPI. Если сайт заблокирован по IP или обход не помог — автоматически через WARP или Tor. Сайт запоминается. WARP — бесплатный туннель Cloudflare: сайты видят IP Cloudflare, а не ваш.</string>

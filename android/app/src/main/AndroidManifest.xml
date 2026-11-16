@@ -45,6 +45,13 @@
         </activity>
 
         <activity
+            android:name=".BridgesActivity"
+            android:exported="false"
+            android:label="@string/custom_title"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
             android:name=".LogActivity"
             android:exported="false"
             android:label="@string/log_label"

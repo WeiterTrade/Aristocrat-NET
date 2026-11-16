@@ -317,6 +317,11 @@ func (u *nativeUI) allNatives() []walk.Widget {
 
 // styleNatives — тёмные поля без системной рамки (рамку рисует страница).
 func (u *nativeUI) styleNatives() {
+	// Страница не рисует поверх полей ввода (они — соседние окна над ней).
+	for _, w := range []walk.Widget{u.setPane, u.home, u.title} {
+		h := w.Handle()
+		win.SetWindowLong(h, win.GWL_STYLE, win.GetWindowLong(h, win.GWL_STYLE)|win.WS_CLIPSIBLINGS)
+	}
 	bg, _ := walk.NewSolidColorBrush(cCard.walk())
 	for _, w := range u.allNatives() {
 		w.SetBackground(bg)
@@ -557,6 +562,8 @@ func (u *nativeUI) layoutPage() {
 		if it.native.BoundsPixels() != r {
 			_ = it.native.SetBoundsPixels(r)
 		}
+		// Поле — поверх страницы: иначе страница закрывает его собой и забирает клики.
+		win.SetWindowPos(it.native.Handle(), win.HWND_TOP, 0, 0, 0, 0, win.SWP_NOMOVE|win.SWP_NOSIZE|win.SWP_NOACTIVATE)
 	}
 	for _, n := range u.allNatives() {
 		vis := u.view == viewSettings && shown[n.Handle()]
@@ -815,6 +822,14 @@ func (u *nativeUI) hitSetting(x, y int) (int, *sBtn) {
 func (u *nativeUI) settingsDown(x, y int, button walk.MouseButton) {
 	if button != walk.LeftButton {
 		return
+	}
+	// Щелчок в рамке поля ввода — фокус полю (на случай, если клик всё же пришёл странице).
+	pb := u.setPane.BoundsPixels()
+	for _, n := range u.allNatives() {
+		if r, ok := u.natives[n.Handle()]; ok && n.Visible() && inRect(r, x+pb.X, y+pb.Y) {
+			_ = n.SetFocus()
+			return
+		}
 	}
 	_ = u.setPane.SetFocus()
 	i, bt := u.hitSetting(x, y)

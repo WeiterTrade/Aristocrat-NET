@@ -222,6 +222,37 @@ func BuildTorrc(o TorOptions) (string, error) {
 	if ptDir == "" && o.PTConfigPath != "" {
 		ptDir = filepath.Dir(o.PTConfigPath)
 	}
+	// Строки ClientTransportPlugin с одной и той же программой объединяем в одну:
+	// tor 0.4.8 падает (assert_unconfigured_count_ok в transports.c), если один и тот же
+	// lyrebird указан в двух строках — например, «obfs4,webtunnel exec lyrebird» и
+	// «snowflake exec lyrebird». На Android так было всегда (там все транспорты в одном файле).
+	type plug struct {
+		exec string
+		ts   []string
+	}
+	var plugs []*plug
+	addPlug := func(line string) {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			return
+		}
+		cmd := strings.Join(f[3:], " ")
+		for _, p := range plugs {
+			if p.exec == cmd {
+				for _, t := range strings.Split(f[1], ",") {
+					dup := false
+					for _, have := range p.ts {
+						dup = dup || have == t
+					}
+					if !dup {
+						p.ts = append(p.ts, t)
+					}
+				}
+				return
+			}
+		}
+		plugs = append(plugs, &plug{exec: cmd, ts: strings.Split(f[1], ",")})
+	}
 	plugins := 0
 	if pt != nil {
 		for _, line := range pt.PluggableTransports {
@@ -259,9 +290,12 @@ func BuildTorrc(o TorOptions) (string, error) {
 					line = fixWindowsExe(line, o.WorkDir)
 				}
 			}
-			w("%s", line)
+			addPlug(line)
 			plugins++
 		}
+	}
+	for _, p := range plugs {
+		w("ClientTransportPlugin %s exec %s", strings.Join(p.ts, ","), p.exec)
 	}
 	if plugins == 0 && len(need) > 0 {
 		if o.LyrebirdPath == "" {

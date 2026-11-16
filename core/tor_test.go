@@ -320,7 +320,7 @@ func TestAutoBridges(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Этап 1: snowflake и свои мосты; заблокированные obfs4/meek не мешают подключению.
-	for _, want := range []string{"Bridge webtunnel", "Bridge snowflake", "ClientTransportPlugin snowflake exec", "webtunnel"} {
+	for _, want := range []string{"Bridge webtunnel", "Bridge snowflake", "snowflake exec", "webtunnel"} {
 		if !strings.Contains(rc, want) {
 			t.Errorf("нет %q в\n%s", want, rc)
 		}
@@ -389,5 +389,35 @@ func TestTorWaitReadyAcrossRestart(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("ожидание зависло на старом запуске")
+	}
+}
+
+// Tor 0.4.8 падает, если одна программа указана в двух строках ClientTransportPlugin.
+func TestAndroidSinglePluginLine(t *testing.T) {
+	dir := t.TempDir()
+	ptPath := filepath.Join(dir, "pt_config.json")
+	os.WriteFile(ptPath, []byte(samplePT), 0o600)
+	lyre := "/data/app/org.obhod.app/lib/arm64/liblyrebird.so"
+	for phase := 0; phase < 2; phase++ {
+		rc, err := BuildTorrc(TorOptions{Bridges: "auto", AutoPhase: phase,
+			Custom:    "webtunnel [2001:db8::2]:443 FP url=https://w.example/x ver=0.0.1\nobfs4 1.2.3.4:443 FP cert=x iat-mode=0",
+			SocksAddr: torSocksAddr, PTConfigPath: ptPath, LyrebirdPath: lyre, ForAndroid: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := strings.Count(rc, "ClientTransportPlugin"); n != 1 {
+			t.Fatalf("этап %d: строк ClientTransportPlugin %d, нужна одна:\n%s", phase, n, rc)
+		}
+	}
+	rc, _ := BuildTorrc(TorOptions{Bridges: "auto", Custom: "webtunnel [2001:db8::2]:443 FP url=https://w.example/x ver=0.0.1",
+		SocksAddr: torSocksAddr, PTConfigPath: ptPath, PTDir: "pt"})
+	seen := map[string]bool{}
+	for _, l := range strings.Split(rc, "\n") {
+		if f := strings.Fields(l); len(f) >= 4 && f[0] == "ClientTransportPlugin" {
+			if seen[f[3]] {
+				t.Fatalf("программа %s указана дважды:\n%s", f[3], rc)
+			}
+			seen[f[3]] = true
+		}
 	}
 }

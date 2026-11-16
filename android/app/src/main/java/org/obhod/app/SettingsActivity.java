@@ -26,8 +26,8 @@ import java.util.TreeMap;
 /** Настройки: маршрут, запасной путь (WARP/Tor), мосты Tor, приложения мимо «Обхода», журнал. */
 public class SettingsActivity extends Activity {
     private Spinner route, heavy, bridges, country;
-    private View customBox, bridgesLabel, heavyLabel, countryLabel;
-    private EditText custom;
+    private TextView customBox;
+    private View bridgesLabel, heavyLabel, countryLabel;
     private TextView torLine;
     private String[] routeValues, heavyValues, bridgeValues, countryValues;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -60,7 +60,6 @@ public class SettingsActivity extends Activity {
         heavyLabel = findViewById(R.id.heavyLabel);
         bridgesLabel = findViewById(R.id.bridgesLabel);
         customBox = findViewById(R.id.customBox);
-        custom = findViewById(R.id.custom);
         findViewById(R.id.openLog).setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         torLine = findViewById(R.id.torLine);
         routeValues = getResources().getStringArray(R.array.route_values);
@@ -72,7 +71,6 @@ public class SettingsActivity extends Activity {
 
         route.setSelection(Math.max(0, Arrays.asList(routeValues).indexOf(Prefs.route(this))));
         bridges.setSelection(Math.max(0, Arrays.asList(bridgeValues).indexOf(Prefs.bridges(this))));
-        custom.setText(Prefs.custom(this));
         updateVisibility();
 
         route.setOnItemSelectedListener(new Picked() {
@@ -87,11 +85,7 @@ public class SettingsActivity extends Activity {
         bridges.setOnItemSelectedListener(new Picked() {
             @Override void picked(int pos) { save("bridges", bridgeValues[pos]); }
         });
-        findViewById(R.id.saveCustom).setOnClickListener(v -> {
-            Prefs.get(this).edit().putString("custom", custom.getText().toString()).apply();
-            ObhodVpnService.restartIfRunning(this);
-            Toast.makeText(this, R.string.save, Toast.LENGTH_SHORT).show();
-        });
+        customBox.setOnClickListener(v -> startActivity(new Intent(this, BridgesActivity.class)));
         bindCheck(R.id.keepLocal, "keep_local", Prefs.keepLocal(this));
         bindCheck(R.id.geoTor, "geo_tor", Prefs.geoTor(this));
         findViewById(R.id.apps).setOnClickListener(v -> pickApps());
@@ -201,12 +195,18 @@ public class SettingsActivity extends Activity {
         bridgesLabel.setVisibility(tor ? View.VISIBLE : View.GONE);
         country.setVisibility(tor ? View.VISIBLE : View.GONE);
         countryLabel.setVisibility(tor ? View.VISIBLE : View.GONE);
-        customBox.setVisibility(tor && "custom".equals(Prefs.bridges(this)) ? View.VISIBLE : View.GONE);
+        customBox.setVisibility(tor ? View.VISIBLE : View.GONE);
+        int n = BridgesActivity.count(Prefs.custom(this));
+        customBox.setText(getString(R.string.custom_row) + (n > 0 ? "   (" + n + ")" : ""));
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        // На экране «Свои мосты» могли переключиться на свои мосты и изменить их число.
+        int bi = Arrays.asList(bridgeValues).indexOf(Prefs.bridges(this));
+        if (bi >= 0 && bridges.getSelectedItemPosition() != bi) bridges.setSelection(bi);
+        updateVisibility();
         ui.post(tick);
     }
 
