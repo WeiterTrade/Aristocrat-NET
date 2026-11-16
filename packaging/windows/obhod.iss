@@ -1,4 +1,4 @@
-; Установщик Aristocrat NET для Windows 7, 8, 8.1, 10, 11 (x86 и x64) — Inno Setup 6.2.
+﻿; Установщик Aristocrat NET для Windows 7, 8, 8.1, 10, 11 (x86 и x64) — Inno Setup 6.2.
 ; Сборка: ISCC.exe /DVERSION=1.0.0 /DVIVERSION=1.0.0.0 /DSRC=<папка со сборкой> obhod.iss
 ;   SRC\Obhod.exe, SRC\README.txt, SRC\obhod.ico
 ;   SRC\tor-legacy\  — Tor 13.5.x (последний с поддержкой Windows 7/8)
