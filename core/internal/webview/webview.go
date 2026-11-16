@@ -17,6 +17,13 @@ package webview
 
 #include <gtk/gtk.h>
 
+static void obhod_hide(webview_t w) {
+	GtkWidget *win = (GtkWidget *)webview_get_window(w);
+	if (win != NULL) {
+		gtk_widget_hide(win);
+	}
+}
+
 static void obhod_present(webview_t w) {
 	GtkWidget *win = (GtkWidget *)webview_get_window(w);
 	if (win != NULL) {
@@ -85,6 +92,10 @@ const (
 type WebView interface {
 	// Present выводит окно на передний план (вызывать из главного потока).
 	Present()
+
+	// Hide прячет окно, не останавливая его (вызывать через Dispatch — из главного потока).
+	// Present показывает его снова.
+	Hide()
 
 	// InterceptClose — крестик окна вызывает window.obhodClose() на странице вместо закрытия.
 	InterceptClose()
@@ -192,6 +203,10 @@ func NewWindow(debug bool, window unsafe.Pointer) WebView {
 // Present выводит окно на передний план (вызывать через Dispatch — из главного потока).
 func (w *webview) Present() {
 	C.obhod_present(w.w)
+}
+
+func (w *webview) Hide() {
+	C.obhod_hide(w.w)
 }
 
 func (w *webview) InterceptClose() {

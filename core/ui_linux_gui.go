@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/systray"
@@ -86,6 +87,9 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 	if show {
 		request()
 	}
+	// Окно создаётся один раз. «Свернуть в трей» только прячет его (главный цикл GTK продолжает
+	// работать), а «Открыть» показывает снова. Раньше окно останавливало цикл GTK, оставаясь
+	// на экране, — и система показывала «Aristocrat NET не отвечает».
 	for {
 		select {
 		case <-done:
@@ -95,7 +99,6 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 		if !hasDisplay {
 			continue
 		}
-		// Окно GTK живёт в главном потоке, пока его не закроют.
 		w := webview.New(false)
 		if w == nil {
 			a.logf("Не удалось создать окно WebKitGTK — открываю в браузере")
@@ -103,32 +106,43 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 			continue
 		}
 		w.SetTitle(appTitle)
-		w.InterceptClose()
-		a.mu.Lock()
-		a.hideUI = w.Terminate // «Свернуть в трей» из вопроса при закрытии
-		a.mu.Unlock()
 		w.SetSize(460, 820, webview.HintNone)
+		w.InterceptClose()
 		w.Navigate(url)
+		a.mu.Lock()
+		a.hideUI = func() { w.Dispatch(w.Hide) }
+		a.mu.Unlock()
 		stop := make(chan struct{})
+		quitting := false
+		var qmu sync.Mutex
 		go func() {
 			for {
 				select {
 				case <-stop:
 					return
 				case <-done:
-					w.Terminate()
+					qmu.Lock()
+					quitting = true
+					qmu.Unlock()
+					w.Dispatch(w.Terminate) // из главного потока GTK
 					return
 				case <-showCh:
-					w.Dispatch(w.Present) // повторный запуск — вывести окно вперёд
+					w.Dispatch(w.Present) // показать (в том числе спрятанное в трей) окно
 				}
 			}
 		}()
-		w.Run()
+		w.Run() // до выхода из программы или пока окно не закрыли принудительно
 		a.mu.Lock()
 		a.hideUI = nil
 		a.mu.Unlock()
 		close(stop)
 		w.Destroy()
+		qmu.Lock()
+		q := quitting
+		qmu.Unlock()
+		if q {
+			return
+		}
 	}
 }
 
