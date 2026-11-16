@@ -233,6 +233,8 @@ public class ObhodVpnService extends VpnService {
             cmd.add(torLog.getAbsolutePath());
             cmd.add("-geoip-dir");
             cmd.add(geo.getAbsolutePath());
+            cmd.add("-adblock");
+            cmd.add(Prefs.adBlock(this) ? "on" : "off");
             cmd.add("-keep-local");
             cmd.add(Prefs.keepLocal(this) ? "on" : "off");
             cmd.add("-geo-tor");

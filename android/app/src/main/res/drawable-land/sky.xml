@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Небо с лучами для альбомной ориентации (телевизор): широкая картинка на весь экран, без полос по бокам -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><color android:color="#0A1835" /></item>
+    <item><bitmap android:src="@drawable/sky_img" android:gravity="fill" /></item>
+</layer-list>

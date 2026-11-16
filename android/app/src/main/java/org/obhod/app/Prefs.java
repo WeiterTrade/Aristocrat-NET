@@ -76,6 +76,8 @@ final class Prefs {
     }
 
     /** Российские и казахстанские сайты — напрямую, с настоящим IP. */
+    static boolean adBlock(Context c) { return get(c).getBoolean("ad_block", true); }
+
     static boolean keepLocal(Context c) { return get(c).getBoolean("keep_local", true); }
 
     /** В России Spotify и подобные — через Tor. */

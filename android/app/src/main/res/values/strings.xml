@@ -27,6 +27,9 @@
     <string name="log_label">Журнал</string>
     <string name="log_label_row">Журнал  ›</string>
     <string name="other_label">Другие</string>
+    <string name="ads_label">Реклама</string>
+    <string name="ads_block">Блокировать рекламу — на сайтах и в приложениях</string>
+    <string name="ads_hint">Баннеры, всплывающие окна, реклама в играх и приложениях (в том числе букмекеров), слежка. Список AdGuard обновляется сам раз в сутки. Рекламу внутри роликов YouTube так не убрать — для телевизора есть SmartTube.</string>
     <string name="copy">Копировать</string>
     <string name="copied">Журнал скопирован</string>
     <string name="custom_row">Свои мосты  ›</string>

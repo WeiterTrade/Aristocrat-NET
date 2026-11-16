@@ -90,6 +90,7 @@ public class SettingsActivity extends Activity {
         customBox.setOnClickListener(v -> startActivity(new Intent(this, BridgesActivity.class)));
         findViewById(R.id.sendBridges).setOnClickListener(v -> BridgeShare.send(this));
         bindCheck(R.id.keepLocal, "keep_local", Prefs.keepLocal(this));
+        bindCheck(R.id.adBlock, "ad_block", Prefs.adBlock(this));
         bindCheck(R.id.geoTor, "geo_tor", Prefs.geoTor(this));
         findViewById(R.id.apps).setOnClickListener(v -> pickApps());
         findViewById(R.id.warpReset).setOnClickListener(v -> {
