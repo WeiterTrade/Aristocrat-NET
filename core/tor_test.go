@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -320,7 +321,10 @@ func TestAutoBridges(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Этап 1: snowflake и свои мосты; заблокированные obfs4/meek не мешают подключению.
-	for _, want := range []string{"Bridge webtunnel", "Bridge snowflake", "snowflake exec", "webtunnel"} {
+	if !regexp.MustCompile(`ClientTransportPlugin \S*snowflake\S* exec`).MatchString(rc) {
+		t.Errorf("нет транспорта snowflake в\n%s", rc)
+	}
+	for _, want := range []string{"Bridge webtunnel", "Bridge snowflake", "webtunnel"} {
 		if !strings.Contains(rc, want) {
 			t.Errorf("нет %q в\n%s", want, rc)
 		}

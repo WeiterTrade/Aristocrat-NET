@@ -296,7 +296,14 @@ func BuildTorrc(o TorOptions) (string, error) {
 	}
 	plugins := 0
 	if pt != nil {
-		for _, line := range pt.PluggableTransports {
+		// Порядок — постоянный (у map он случайный): одинаковый torrc при каждом запуске.
+		names := make([]string, 0, len(pt.PluggableTransports))
+		for k := range pt.PluggableTransports {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			line := pt.PluggableTransports[name]
 			// Строка вида: ClientTransportPlugin meek_lite,obfs4,... exec ${pt_path}lyrebird
 			fields := strings.Fields(line)
 			if len(fields) < 4 {
