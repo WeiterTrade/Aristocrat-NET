@@ -110,7 +110,7 @@ func popupProc(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
 		x, y := int(int16(lp&0xffff)), int(int16((lp>>16)&0xffff))
 		if i := p.hit(x, y); i >= 0 {
 			it := p.items[i]
-			if it.check {
+			if it.check && it.act == nil { // флажок в диалоге: только отметить
 				it.checked = !it.checked
 				win.InvalidateRect(hwnd, nil, false)
 				return 0
@@ -407,10 +407,15 @@ func (u *nativeUI) trayMenu() {
 	p := &popup{u: u, header: true, items: []*popItem{
 		{label: "Открыть " + appTitle, act: u.showWindow},
 		{label: toggle, act: u.toggle},
+	}}
+	if u.showAnt() { // сборка разработчика: переключатель раздачи
+		p.items = append(p.items, &popItem{label: "Раздача интернета", check: true, checked: u.a.dev.On(), act: u.toggleShare})
+	}
+	p.items = append(p.items, []*popItem{
 		{sep: true},
 		{label: "Настройки", act: func() { u.showWindow(); u.setView(viewSettings) }},
 		{label: "Выход", danger: true, act: func() { go u.quit() }},
-	}}
+	}...)
 	p.show(int(pt.X), int(pt.Y))
 }
 

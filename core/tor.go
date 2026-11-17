@@ -73,6 +73,8 @@ type TorOptions struct {
 	// AutoPhase — этап автовыбора мостов: 0 — snowflake и свои мосты (лучше всего проходят
 	// блокировки в России и Казахстане), 1 — запасной: obfs4, meek и свои мосты.
 	AutoPhase int
+	// ClientAuthDir — папка с ключом доступа к скрытому сервису разработчика ("" — нет).
+	ClientAuthDir string
 }
 
 // TorCountries — страны выхода из Tor, которые можно выбрать (в них много выходных узлов).
@@ -109,6 +111,9 @@ func BuildTorrc(o TorOptions) (string, error) {
 	w("MaxCircuitDirtiness 900")
 	w("ReducedConnectionPadding 1")
 	w("KeepalivePeriod 60")
+	if o.ClientAuthDir != "" {
+		w("ClientOnionAuthDir %s", o.ClientAuthDir)
+	}
 	if o.ForAndroid && o.LogFile != "" {
 		w("Log notice file %s", o.LogFile)
 	}

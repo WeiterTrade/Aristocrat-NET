@@ -15,12 +15,20 @@
   #define SRC "..\..\build\win"
 #endif
 #define ASSETS "..\..\assets"
+; /DDEV=1 — установщик сборки разработчика (раздача через Tor); ставится только на компьютер разработчика.
+#ifdef DEV
+  #define SETUPNAME "AristocratNET-Dev-Setup"
+  #define VERNAME "Aristocrat NET " + VERSION + " (разработчик)"
+#else
+  #define SETUPNAME "AristocratNET-Setup"
+  #define VERNAME "Aristocrat NET " + VERSION
+#endif
 
 [Setup]
 AppId=AristocratNET
 AppName=Aristocrat NET
 AppVersion={#VERSION}
-AppVerName=Aristocrat NET {#VERSION}
+AppVerName={#VERNAME}
 AppPublisher=Aristocrat NET
 AppCopyright=Aristocrat (в своём кругу — Старый)
 VersionInfoVersion={#VIVERSION}
@@ -34,7 +42,7 @@ DisableWelcomePage=yes
 PrivilegesRequired=admin
 MinVersion=6.1sp1
 OutputDir=.
-OutputBaseFilename=AristocratNET-Setup-{#VERSION}
+OutputBaseFilename={#SETUPNAME}-{#VERSION}
 SetupIconFile={#SRC}\obhod.ico
 UninstallDisplayIcon={app}\obhod.ico
 UninstallDisplayName=Aristocrat NET

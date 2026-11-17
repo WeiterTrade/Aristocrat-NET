@@ -107,6 +107,7 @@ func (u *nativeUI) radioPage(title string, ids []string, names map[string]string
 }
 
 var routeHints = map[string]string{
+	RouteDev:  "Интернет через компьютер разработчика: сайты видят IP Казахстана",
 	RouteAuto: "Сайты напрямую с обходом DPI; заблокированные по IP — через WARP или Tor",
 	RouteDPI:  "Самый быстрый: без смены IP, без WARP и Tor",
 	RouteWarp: "Весь трафик через Cloudflare: другой IP, быстро (страна остаётся вашей)",
@@ -120,10 +121,25 @@ var dohNames = map[string]string{"cloudflare": "Cloudflare (1.1.1.1)", "google":
 
 func (u *nativeUI) buildPage(id string) sPage {
 	st := u.a.settings()
+	if p := u.devPage(id); p != nil {
+		return *p
+	}
 	switch id {
 	case "route":
-		return u.radioPage("Режим работы", []string{RouteAuto, RouteDPI, RouteWarp, RouteTor}, RouteNames, routeHints, st.Route,
+		p := u.radioPage("Режим работы", routeIDs(), RouteNames, routeHints, st.Route,
 			func(s *Settings, v string) { s.Route = v })
+		// «Через разработчика» — сначала предупреждение, что разработчик увидит сведения об устройстве.
+		for _, it := range p.items {
+			if it.radio && it.title == RouteNames[RouteDev] && st.Route != RouteDev {
+				it.act = func() {
+					u.confirmDevRoute(func() {
+						u.apply(func(s *Settings) { s.Route = RouteDev })
+						u.goBack()
+					})
+				}
+			}
+		}
+		return p
 	case "heavy":
 		return u.radioPage("Если сайт заблокирован по IP", heavyOrder, HeavyNames, map[string]string{
 			HeavyWarpTor: "WARP быстрее; Tor — запасной вариант",
@@ -324,6 +340,9 @@ func (u *nativeUI) buildPage(id string) sPage {
 		toggleRow("Включать при запуске", "", st.AutoStart, func() { u.apply(func(s *Settings) { s.AutoStart = !s.AutoStart }) }),
 		row("При закрытии окна", "", closeNames[st.CloseAction], u.open("close")),
 		row("Порт прокси", "", strconv.Itoa(st.Port), u.open("port")),
+	)
+	items = append(items, u.devItems(st)...)
+	items = append(items,
 		section("Другие"),
 		row("Журнал", "", "", u.open("logs")),
 		row("О программе", "", "v"+appVersion, func() { u.aboutFromSettings = true; u.setView(viewAbout) }),
@@ -337,7 +356,7 @@ func (u *nativeUI) buildPage(id string) sPage {
 }
 
 func shortRoute(r string) string {
-	return map[string]string{RouteAuto: "Авто", RouteDPI: "Только DPI", RouteWarp: "WARP", RouteTor: "Tor"}[r]
+	return map[string]string{RouteAuto: "Авто", RouteDPI: "Только DPI", RouteWarp: "WARP", RouteTor: "Tor", RouteDev: "Разработчик"}[r]
 }
 
 func bridgeCount(custom string) string {
@@ -382,7 +401,7 @@ func (u *nativeUI) goBack() {
 // Поля ввода
 
 func (u *nativeUI) allNatives() []walk.Widget {
-	return []walk.Widget{u.teBridges, u.leHost, u.teResult, u.lePort, u.teLog, u.teSites}
+	return []walk.Widget{u.teBridges, u.leHost, u.teResult, u.lePort, u.teLog, u.teSites, u.lePass, u.teDevLog}
 }
 
 // styleNatives — тёмные поля без системной рамки (рамку рисует страница).
@@ -448,6 +467,8 @@ func (u *nativeUI) showPage() {
 		u.teLog.SendMessage(win.EM_LINESCROLL, 0, 100000)
 	case "sites":
 		_ = u.teSites.SetText(u.sitesText())
+	case "devlog":
+		_ = u.teDevLog.SetText(u.a.dev.JournalText())
 	}
 	u.layoutPage()
 	u.setPane.Invalidate()
@@ -456,6 +477,7 @@ func (u *nativeUI) showPage() {
 
 // refreshPage — раз в секунду, пока открыты настройки.
 func (u *nativeUI) refreshPage() {
+	u.refreshDevLog()
 	switch u.page {
 	case "logs":
 		if t := u.logText(); u.teLog.Text() != t {

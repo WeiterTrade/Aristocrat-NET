@@ -425,6 +425,8 @@ type nativeUI struct {
 	lePort    *walk.LineEdit
 	teLog     *walk.TextEdit
 	teSites   *walk.TextEdit
+	lePass    *walk.LineEdit // пароль разработчика
+	teDevLog  *walk.TextEdit // журнал подключений (раздача)
 	testing   bool
 	devices   []ShareDevice // найденные в сети устройства (страница «Отправить мосты»)
 	searching bool
@@ -584,6 +586,13 @@ func (u *nativeUI) build() error {
 			dcl.LineEdit{AssignTo: &u.lePort, Visible: false, Font: dcl.Font{Family: "Segoe UI", PointSize: 11}},
 			dcl.TextEdit{AssignTo: &u.teLog, Visible: false, ReadOnly: true, VScroll: true, Font: dcl.Font{Family: "Consolas", PointSize: 8}},
 			dcl.TextEdit{AssignTo: &u.teSites, Visible: false, ReadOnly: true, VScroll: true, Font: dcl.Font{Family: "Segoe UI", PointSize: 9}},
+			dcl.LineEdit{AssignTo: &u.lePass, Visible: false, PasswordMode: true, Font: dcl.Font{Family: "Segoe UI", PointSize: 11},
+				OnKeyDown: func(k walk.Key) {
+					if k == walk.KeyReturn {
+						u.devLogin()
+					}
+				}},
+			dcl.TextEdit{AssignTo: &u.teDevLog, Visible: false, ReadOnly: true, VScroll: true, Font: dcl.Font{Family: "Segoe UI", PointSize: 9}},
 		},
 	}.Create()); err != nil {
 		return err
@@ -1023,6 +1032,9 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 		u.sceneImg, u.sceneKey = img, key
 	}
 	copy(o.img.Pix, u.sceneImg.Pix)
+	if u.view == viewHome && u.showAnt() {
+		u.drawAntenna(o.img)
+	}
 	if u.view == viewHome && fw > 0 {
 		drawImageScaled(o.img, u.flagImg, walk.Rectangle{X: u.rPill.X + padX, Y: pillY + (pillH-fh)/2, Width: fw, Height: fh})
 	}
@@ -1133,6 +1145,8 @@ func (u *nativeUI) homeDown(x, y int, button walk.MouseButton) {
 		u.toggle()
 	case inCircle(u.rGear, x, y):
 		u.setView(viewSettings)
+	case u.showAnt() && inCircle(u.antRect(), x, y):
+		u.toggleShare()
 	case inRect(u.rAbout, x, y):
 		u.setView(viewAbout)
 	}
@@ -1143,7 +1157,8 @@ func (u *nativeUI) homeMove(x, y int, _ walk.MouseButton) {
 		u.hover = 0
 		u.title.Invalidate()
 	}
-	if u.view == viewHome && (inCircle(u.rBtn, x, y) || inCircle(u.rGear, x, y) || inRect(u.rAbout, x, y)) {
+	if u.view == viewHome && (inCircle(u.rBtn, x, y) || inCircle(u.rGear, x, y) || inRect(u.rAbout, x, y) ||
+		(u.showAnt() && inCircle(u.antRect(), x, y))) {
 		u.home.SetCursor(walk.CursorHand())
 	} else {
 		u.home.SetCursor(walk.CursorArrow())

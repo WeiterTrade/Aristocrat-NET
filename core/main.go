@@ -39,7 +39,7 @@ const appName = "Obhod" // имя папки данных (не меняется
 // appTitle — название программы для пользователя.
 const appTitle = "Aristocrat NET"
 
-var appVersion = "0.9.6" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
+var appVersion = "0.10.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
 const torSocksAddr = "127.0.0.1:9077"
 
@@ -69,11 +69,13 @@ type Settings struct {
 	SysProxy      bool              `json:"sys_proxy"`
 	DoH           string            `json:"doh"`
 	AutoStart     bool              `json:"auto_start"`
-	KeepLocal     bool              `json:"keep_local"`    // российские и казахстанские сайты — напрямую, с настоящим IP
-	GeoTor        bool              `json:"geo_tor"`       // в России: Spotify и др. закрытые для России сервисы — через Tor
-	AdBlock       bool              `json:"adblock"`       // блокировать рекламу и слежку
-	BridgesAsked  bool              `json:"bridges_asked"` // при первом запуске уже предлагали получить мосты
-	CloseAction   string            `json:"close_action"`  // крестик окна: "" — спрашивать, tray — в трей, quit — выход
+	KeepLocal     bool              `json:"keep_local"`          // российские и казахстанские сайты — напрямую, с настоящим IP
+	GeoTor        bool              `json:"geo_tor"`             // в России: Spotify и др. закрытые для России сервисы — через Tor
+	AdBlock       bool              `json:"adblock"`             // блокировать рекламу и слежку
+	BridgesAsked  bool              `json:"bridges_asked"`       // при первом запуске уже предлагали получить мосты
+	CloseAction   string            `json:"close_action"`        // крестик окна: "" — спрашивать, tray — в трей, quit — выход
+	DevMode       bool              `json:"dev_mode,omitempty"`  // сборка разработчика: режим разработчика включён (по паролю)
+	DevShare      bool              `json:"dev_share,omitempty"` // сборка разработчика: раздача включена
 	Learned       map[string]string `json:"learned"`
 	Ver           int               `json:"ver"`
 }
@@ -133,9 +135,10 @@ type App struct {
 	proxyErr string
 	torErr   string
 	ads      *AdBlock
-	share    *Share // передача мостов в локальной сети (на ПК; на Android — в приложении)
-	hideUI   func() // Linux: закрыть окно WebKitGTK (программа остаётся в трее)
-	showUI   func() // показать окно программы (нативное окно на Windows, браузер на Linux)
+	dev      *DevServer // раздача через Tor (только сборка разработчика)
+	share    *Share     // передача мостов в локальной сети (на ПК; на Android — в приложении)
+	hideUI   func()     // Linux: закрыть окно WebKitGTK (программа остаётся в трее)
+	showUI   func()     // показать окно программы (нативное окно на Windows, браузер на Linux)
 }
 
 func (a *App) logf(f string, args ...any) {
@@ -244,7 +247,7 @@ func (a *App) startTor() {
 	torrc, err := BuildTorrc(TorOptions{
 		Bridges: bridges, Custom: custom, SocksAddr: socks, DataDir: "tor-data",
 		PTConfigPath: paths.PTConfig, PTDir: ptDir, WorkDir: a.dir, GeoIPDir: geoDir, ExitCountry: country,
-		AutoPhase: a.torPhase,
+		AutoPhase: a.torPhase, ClientAuthDir: relIfSet(writeDevClientAuth(filepath.Join(a.dir, "tor-auth")), "tor-auth"),
 	})
 	if err != nil {
 		a.torErr = err.Error()
@@ -317,6 +320,8 @@ var heavyOrder = []string{HeavyWarpTor, HeavyWarp, HeavyTor}
 // needs — какие запасные пути нужны при текущих настройках.
 func (s Settings) needs() (warp, tor bool) {
 	switch s.Route {
+	case RouteDev:
+		return s.Heavy != HeavyTor, true // к разработчику — через Tor; запасной путь — как в «Авто»
 	case RouteWarp:
 		return true, false
 	case RouteTor:
@@ -425,6 +430,9 @@ func (a *App) loadGeoIP(dir string) {
 // startUpstreams запускает или останавливает WARP и Tor под текущие настройки.
 // restartTor — перезапустить Tor (сменились мосты).
 func (a *App) startUpstreams(restartTor bool) {
+	if a.settings().Route == RouteDev && a.eng.Dev != nil {
+		a.eng.Dev.Watch(func() bool { return a.eng.Running() && a.settings().Route == RouteDev })
+	}
 	needWarp, needTor := a.needs()
 	if needWarp {
 		a.warp.Start()
@@ -448,6 +456,8 @@ func (a *App) startUpstreams(restartTor bool) {
 // routeSummary — что делает программа в текущем режиме (одна строка для главного экрана).
 func routeSummary(s Settings) string {
 	switch s.Route {
+	case RouteDev:
+		return "Через компьютер разработчика"
 	case RouteDPI:
 		return "Обход блокировок"
 	case RouteTor:
@@ -478,6 +488,16 @@ func (a *App) upstreamLines() (lines, warns []string) {
 			if we != "" {
 				warns = append(warns, we)
 			}
+		}
+	}
+	if a.settings().Route == RouteDev && a.eng.Dev != nil {
+		switch a.eng.Dev.State() {
+		case "ready":
+			lines = append(lines, "Разработчик на связи")
+		case "down":
+			lines = append(lines, "Разработчик недоступен — обычный режим")
+		default:
+			lines = append(lines, "Подключение к разработчику…")
 		}
 	}
 	if needT {
@@ -568,6 +588,7 @@ func (a *App) state() map[string]any {
 	cur := a.settings()
 	ads := map[string]any{"on": cur.AdBlock, "blocked": a.ads.Count(), "rules": a.ads.Rules()}
 	askBridges, offer := a.askBridges(), a.shareOffer()
+	dev := a.devState()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if te == "" {
@@ -579,7 +600,7 @@ func (a *App) state() map[string]any {
 		"learned":     ls,
 		"blocked":     bs,
 		"strategies":  kv(AutoOrder, StratNames),
-		"routes":      kv([]string{RouteAuto, RouteDPI, RouteWarp, RouteTor}, RouteNames),
+		"routes":      kv(routeIDs(), RouteNames),
 		"heavies":     kv(heavyOrder, HeavyNames),
 		"countries":   kv(torCountryOrder, TorCountries),
 		"up_lines":    upLines,
@@ -588,6 +609,7 @@ func (a *App) state() map[string]any {
 		"warp":        map[string]any{"status": ws, "error": we, "endpoint": wep},
 		"ads":         ads,
 		"ask_bridges": askBridges,
+		"dev":         dev,
 		"share_offer": offer,
 		"bridges":     kv(bridgeOrder, BridgeNames),
 		"tor":         map[string]any{"status": ts, "progress": tp, "error": te},
@@ -741,6 +763,100 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		a.answerShare(req.ID, req.Accept)
 		writeJSON(w, 200, a.state())
 	}))
+	// Режим разработчика (только сборка разработчика; в пользовательской — ответы «недоступно»).
+	devErr := func(w http.ResponseWriter, err error) bool {
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return true
+		}
+		return false
+	}
+	mux.HandleFunc("/api/dev/unlock", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Password string `json:"password"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if err := a.devUnlock(req.Password); err != nil {
+			time.Sleep(time.Second) // перебор паролей — медленно
+			devErr(w, err)
+			return
+		}
+		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/dev/lock", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		a.devLock()
+		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/dev/share", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			On bool `json:"on"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if devErr(w, a.devSetShare(req.On)) {
+			return
+		}
+		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/dev/key", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		if a.dev == nil || !a.settings().DevMode {
+			devErr(w, errors.New("режим разработчика выключен"))
+			return
+		}
+		k, err := a.dev.ExportKey()
+		if devErr(w, err) {
+			return
+		}
+		writeJSON(w, 200, map[string]string{"key": k})
+	}))
+	mux.HandleFunc("/api/dev/key/import", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Text string `json:"text"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if a.dev == nil || !a.settings().DevMode {
+			devErr(w, errors.New("режим разработчика выключен"))
+			return
+		}
+		if devErr(w, a.dev.ImportKey(req.Text)) {
+			return
+		}
+		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/dev/key/save", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Where string `json:"where"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if a.dev == nil || !a.settings().DevMode {
+			devErr(w, errors.New("режим разработчика выключен"))
+			return
+		}
+		var paths []string
+		var err error
+		if req.Where == "cloud" {
+			paths, err = a.dev.SaveKeyToCloud()
+		} else {
+			home, _ := os.UserHomeDir()
+			p := filepath.Join(home, "AristocratNET-ключ-разработчика.txt")
+			if err = a.dev.SaveKey(p); err == nil {
+				paths = []string{p}
+			}
+		}
+		if devErr(w, err) {
+			return
+		}
+		writeJSON(w, 200, map[string]any{"paths": paths})
+	}))
+	mux.HandleFunc("/api/dev/journal", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		if a.dev == nil || !a.settings().DevMode {
+			devErr(w, errors.New("режим разработчика выключен"))
+			return
+		}
+		if r.Method == http.MethodPost {
+			a.dev.ClearJournal()
+		}
+		writeJSON(w, 200, map[string]string{"text": a.dev.JournalText()})
+	}))
 	mux.HandleFunc("/api/hide", a.guard(func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		hide := a.hideUI
@@ -783,6 +899,7 @@ func main() {
 		keepLocal  = flag.String("keep-local", "", "российские и казахстанские сайты напрямую: on | off")
 		geoTor     = flag.String("geo-tor", "", "в России Spotify и подобное через Tor: on | off")
 		adblock    = flag.String("adblock", "", "блокировка рекламы: on | off")
+		deviceName = flag.String("device-name", "", "имя устройства для журнала разработчика (Android)")
 		torLog     = flag.String("tor-log", "", "журнал внешнего Tor (Android): torrc пишет его, ядро читает")
 		stratFlag  = flag.String("strategy", "", "метод обхода DPI: auto | tlsrec | split | ...")
 		dohFlag    = flag.String("doh", "", "DoH: cloudflare | google | quad9")
@@ -854,7 +971,8 @@ func main() {
 		}
 		torrc, err := BuildTorrc(TorOptions{Bridges: a.s.Bridges, Custom: custom, SocksAddr: torSocksAddr,
 			PTConfigPath: *ptConfig, LyrebirdPath: *lyrebird, ForAndroid: true, LogFile: *torLog,
-			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir, AutoPhase: *torPhase, PTSocks: parsePTSocks(*ptSocks)})
+			ExitCountry: a.s.TorCountry, GeoIPDir: *geoipDir, AutoPhase: *torPhase, PTSocks: parsePTSocks(*ptSocks),
+			ClientAuthDir: writeDevClientAuth(filepath.Join(a.dir, "tor-auth"))})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "torrc:", err)
 			os.Exit(1)
@@ -884,6 +1002,18 @@ func main() {
 		UserCountry: a.userCountry,
 		Resolve:     a.res.Lookup,
 	}
+	// «Через разработчика» (если в сборке есть код подключения).
+	if dl := NewDevLink(a.tor, a.dir, a.logf); dl != nil {
+		dev := *deviceName
+		if dev == "" {
+			dev, _ = os.Hostname()
+		}
+		dl.Info = func() string {
+			ip, cc, _ := publicIP()
+			return devInfo(dev, ip, cc, myCity(ip))
+		}
+		a.eng.Dev = dl
+	}
 	a.ads = NewAdBlock(a.dir, a.logf)
 	a.ads.Enabled = func() bool { return a.settings().AdBlock }
 	a.ads.Fetch = httpFetch(a.eng.dialTLSBypass)
@@ -902,6 +1032,7 @@ func main() {
 	var srv *http.Server
 	shutdown := func() {
 		once.Do(func() {
+			a.devStop()
 			a.disable()
 			a.save()
 			if srv != nil {
@@ -969,6 +1100,7 @@ func main() {
 
 	a.share = NewShare(a.logf)
 	a.share.Listen()
+	a.devInit()
 	UnsetSystemProxy(a.s.Port) // на случай аварийного завершения прошлой сессии
 	if a.s.AutoStart {
 		if err := a.enable(); err != nil {
@@ -992,8 +1124,8 @@ func main() {
 
 var ipCache struct {
 	sync.Mutex
-	ip, country string
-	exp         time.Time
+	ip, country, city string
+	exp               time.Time
 }
 
 // publicIP — реальный внешний IP и страна (запрос идёт напрямую, мимо прокси и Tor).
@@ -1015,7 +1147,7 @@ func publicIP() (string, string, error) {
 		}
 		return io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	}
-	var ip, cc string
+	var ip, cc, city string
 	var lastErr error
 	// Сервисы, сразу отдающие IP и страну.
 	for _, u := range []struct{ url, ipKey, ccKey string }{
@@ -1034,6 +1166,7 @@ func publicIP() (string, string, error) {
 		}
 		ip, _ = m[u.ipKey].(string)
 		cc, _ = m[u.ccKey].(string)
+		city, _ = m["city"].(string)
 		if net.ParseIP(ip) != nil {
 			break
 		}
@@ -1060,7 +1193,7 @@ func publicIP() (string, string, error) {
 	if len(cc) != 2 {
 		cc = ""
 	}
-	ipCache.ip, ipCache.country, ipCache.exp = ip, cc, time.Now().Add(2*time.Minute)
+	ipCache.ip, ipCache.country, ipCache.city, ipCache.exp = ip, cc, city, time.Now().Add(2*time.Minute)
 	return ip, cc, nil
 }
 
@@ -1247,4 +1380,53 @@ func (a *App) answerShare(id string, accept bool) {
 	}
 	a.setBridgesAsked()
 	a.logf("Приняты мосты: %d", len(splitBridgeLines(text)))
+}
+
+// relIfSet — путь для torrc относительно папки tor (rel), если abs задан.
+func relIfSet(abs, rel string) string {
+	if abs == "" {
+		return ""
+	}
+	return rel
+}
+
+// routeIDs — режимы работы для интерфейса («Через разработчика» — если в сборке есть код подключения).
+func routeIDs() []string {
+	ids := []string{RouteAuto, RouteDPI, RouteWarp, RouteTor}
+	if devAvailable() {
+		ids = append(ids, RouteDev)
+	}
+	return ids
+}
+
+var cityCache struct {
+	sync.Mutex
+	ip, city string
+	exp      time.Time
+}
+
+// myCity — город по настоящему IP (для журнала разработчика); кэшируется на час.
+func myCity(ip string) string {
+	cityCache.Lock()
+	defer cityCache.Unlock()
+	if cityCache.ip == ip && time.Now().Before(cityCache.exp) {
+		return cityCache.city
+	}
+	city := ""
+	ipCache.Lock()
+	if ipCache.ip == ip {
+		city = ipCache.city
+	}
+	ipCache.Unlock()
+	if city == "" {
+		cl := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: nil}}
+		if resp, err := cl.Get("https://ipwho.is/"); err == nil {
+			var m map[string]any
+			_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&m)
+			resp.Body.Close()
+			city, _ = m["city"].(string)
+		}
+	}
+	cityCache.ip, cityCache.city, cityCache.exp = ip, city, time.Now().Add(time.Hour)
+	return city
 }

@@ -42,6 +42,9 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 		systray.SetOnTapped(request)
 		mOpen := systray.AddMenuItem("Открыть "+appTitle, "")
 		mToggle := systray.AddMenuItem("Включить обход", "")
+		// Сборка разработчика: переключатель раздачи (виден, когда включён режим разработчика).
+		mShare := systray.AddMenuItemCheckbox("Раздача интернета", "", false)
+		mShare.Hide()
 		systray.AddSeparator()
 		mQuit := systray.AddMenuItem("Выход", "")
 		go func() {
@@ -61,7 +64,21 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 				case <-mQuit.ClickedCh:
 					go quit()
 					return
+				case <-mShare.ClickedCh:
+					if err := a.devSetShare(!a.dev.On()); err != nil {
+						a.logf("Раздача: %v", err)
+					}
 				case <-time.After(time.Second):
+				}
+				if devBuild && a.settings().DevMode {
+					mShare.Show()
+					if a.dev.On() {
+						mShare.Check()
+					} else {
+						mShare.Uncheck()
+					}
+				} else {
+					mShare.Hide()
 				}
 				state := "off"
 				if a.eng.Running() {

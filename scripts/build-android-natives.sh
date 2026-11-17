@@ -57,7 +57,7 @@ for abi in armeabi-v7a arm64-v8a x86 x86_64; do
   mkdir -p "$JNI/$abi"
   echo "==> $abi: ядро"
   (cd "$ROOT/core" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" \
-     go build -trimpath -ldflags "$LDX -X main.appVersion=$VERSION" -o "$JNI/$abi/libobhod.so" .)
+     go build -trimpath -ldflags "$LDX -X main.appVersion=$VERSION -X main.devCode=${DEVCODE:-}" -o "$JNI/$abi/libobhod.so" .)
   if [ -n "$LYRE" ]; then
     echo "==> $abi: lyrebird"
     (cd "$LYRE" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" GOFLAGS=-mod=mod \

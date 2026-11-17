@@ -27,6 +27,8 @@ type Engine struct {
 	Warp      *Warp
 	Local     *Local        // российские и казахстанские сайты — напрямую; Spotify в России — через Tor
 	Ads       *AdBlock      // блокировка рекламы (nil — выключена)
+	Dev       *DevLink      // «через разработчика» (nil — в сборке нет кода подключения)
+	Share     *ShareAuth    // раздача (сборка разработчика): вход по логину SOCKS5, учёт клиентов
 	names     dnsNames      // адрес → имя сайта (по ответам нашего DNS, см. dnsserver.go)
 	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
 	Timeout   time.Duration // ожидание ответа сервера на каждый метод
@@ -146,6 +148,7 @@ const (
 	RouteDPI  = "dpi"  // только обход DPI
 	RouteTor  = "tor"  // всё через Tor
 	RouteWarp = "warp" // всё через Cloudflare WARP (другой IP)
+	// RouteDev — всё через компьютер разработчика (см. devlink.go)
 )
 
 var RouteNames = map[string]string{
@@ -180,6 +183,16 @@ func (e *Engine) upstreams() []Upstream {
 	var out []Upstream
 	switch e.route() {
 	case RouteDPI:
+	case RouteDev:
+		if e.Dev != nil && e.Dev.WaitReady(0) {
+			out = append(out, e.Dev)
+		}
+		if e.warpOn() {
+			out = append(out, e.Warp)
+		}
+		if e.torOn() {
+			out = append(out, e.Tor)
+		}
 	case RouteTor:
 		if e.torOn() {
 			out = append(out, e.Tor)
@@ -205,6 +218,8 @@ func (e *Engine) upstreamByName(name string) Upstream {
 		return e.Tor
 	case name == StratWarp && e.warpOn():
 		return e.Warp
+	case name == StratDev && e.Dev != nil && e.Dev.WaitReady(0):
+		return e.Dev
 	}
 	return nil
 }
@@ -237,6 +252,11 @@ func (e *Engine) viaFirst(host string) (Upstream, error) {
 		return nil, nil
 	}
 	switch e.route() {
+	case RouteDev:
+		// Через разработчика, пока его компьютер отвечает; иначе — как в «Авто».
+		if e.Dev != nil && e.Dev.WaitReady(0) {
+			return e.Dev, nil
+		}
 	case RouteTor:
 		if !e.torOn() {
 			return nil, errors.New("Tor не запущен")
@@ -323,11 +343,17 @@ func upLabel(name string) string {
 	if name == StratWarp {
 		return "WARP"
 	}
+	if name == StratDev {
+		return "компьютер разработчика"
+	}
 	return "Tor"
 }
 
 func (e *Engine) handle(c net.Conn) {
 	defer c.Close()
+	if e.Share != nil {
+		c = &countConn{Conn: c} // раздача: считаем трафик пользователя
+	}
 	e.conns.Add(1)
 	defer e.conns.Add(-1)
 	e.total.Add(1)
@@ -505,10 +531,49 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 	if _, err := io.ReadFull(br, hdr); err != nil {
 		return
 	}
-	if _, err := io.ReadFull(br, make([]byte, hdr[1])); err != nil {
+	methods := make([]byte, hdr[1])
+	if _, err := io.ReadFull(br, methods); err != nil {
 		return
 	}
-	_, _ = c.Write([]byte{5, 0}) // без пароля
+	if e.Share != nil {
+		// Раздача: только с логином (сведения о пользователе), иначе — отказ.
+		if !strings.ContainsRune(string(methods), 2) {
+			_, _ = c.Write([]byte{5, 0xFF})
+			return
+		}
+		_, _ = c.Write([]byte{5, 2})
+		readField := func() (string, bool) {
+			l := make([]byte, 1)
+			if _, err := io.ReadFull(br, l); err != nil {
+				return "", false
+			}
+			v := make([]byte, l[0])
+			_, err := io.ReadFull(br, v)
+			return string(v), err == nil
+		}
+		ver := make([]byte, 1)
+		if _, err := io.ReadFull(br, ver); err != nil {
+			return
+		}
+		user, ok1 := readField()
+		pass, ok2 := readField()
+		var cl *ShareClient
+		if ok1 && ok2 && e.Share.Check != nil {
+			cl = e.Share.Check(user, pass)
+		}
+		if cl == nil {
+			_, _ = c.Write([]byte{1, 1})
+			return
+		}
+		_, _ = c.Write([]byte{1, 0})
+		if cc, ok := c.(*countConn); ok {
+			cc.owner.Store(cl)
+		}
+		cl.Active.Add(1)
+		defer cl.Active.Add(-1)
+	} else {
+		_, _ = c.Write([]byte{5, 0}) // без пароля
+	}
 	req := make([]byte, 4)
 	if _, err := io.ReadFull(br, req); err != nil {
 		return
@@ -521,7 +586,11 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 	_ = c.SetDeadline(time.Time{})
 	switch req[1] {
 	case 1: // CONNECT
-		host = e.hostFor(host) // приложение подключается по адресу из нашего DNS — узнаём имя сайта
+		host = e.hostFor(host)                     // приложение подключается по адресу из нашего DNS — узнаём имя сайта
+		if e.Share != nil && host == devPingHost { // проверка связи от приложения пользователя
+			_, _ = c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
+			return
+		}
 	case 3: // UDP ASSOCIATE — голосовые звонки, игры, DNS и т. п.
 		e.socksUDP(c, br)
 		return
@@ -615,7 +684,7 @@ func (e *Engine) strategiesFor(host string) []string {
 	return order
 }
 
-func isUpstreamStrat(s string) bool { return s == StratTor || s == StratWarp }
+func isUpstreamStrat(s string) bool { return s == StratTor || s == StratWarp || s == StratDev }
 
 var errConnect = errors.New("не удаётся установить TCP-соединение — вероятно, блокировка по IP или сайт недоступен")
 
@@ -781,6 +850,9 @@ func shortErr(err error) string {
 }
 
 func (e *Engine) markOK(host, strat string, retried bool) {
+	if strat == StratDev {
+		return // путь «через разработчика» не запоминаем: он выбран режимом, а не сайтом
+	}
 	if strat != StratTLSRec && strat != StratNone && !isUpstreamStrat(strat) {
 		e.fixed.Add(1)
 	}
@@ -820,14 +892,14 @@ func pipe(client net.Conn, br *bufio.Reader, up net.Conn, _ []byte) {
 	done := make(chan struct{}, 2)
 	go func() {
 		_, _ = io.Copy(up, br)
-		if tc, ok := up.(*net.TCPConn); ok {
+		if tc, ok := up.(interface{ CloseWrite() error }); ok {
 			_ = tc.CloseWrite()
 		}
 		done <- struct{}{}
 	}()
 	go func() {
 		_, _ = io.Copy(client, up)
-		if tc, ok := client.(*net.TCPConn); ok {
+		if tc, ok := client.(interface{ CloseWrite() error }); ok {
 			_ = tc.CloseWrite()
 		}
 		done <- struct{}{}
