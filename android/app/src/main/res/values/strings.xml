@@ -28,6 +28,10 @@
     <string name="log_label_row">Журнал  ›</string>
     <string name="other_label">Другие</string>
     <string name="ads_label">Реклама</string>
+    <string name="route_dev">Через разработчика (IP Казахстана)</string>
+    <string name="dev_warn_title">Подключиться через разработчика?</string>
+    <string name="dev_warn_text">Интернет пойдёт через компьютер разработчика в Казахстане: сайты увидят казахстанский IP.\n\nРазработчик увидит имя вашего устройства, ваш IP-адрес, город и страну, версию приложения и объём трафика.</string>
+    <string name="dev_warn_ok">Подключиться</string>
     <string name="yt_button">YouTube без рекламы</string>
     <string name="yt_title">YouTube без рекламы</string>
     <string name="yt_text_tv">Ролики YouTube и реклама в них приходят с одних и тех же серверов Google по зашифрованному соединению, поэтому их не разделить на уровне сети — так не умеет ни одна программа, включая AdGuard.\n\nНа телевизоре рекламу убирает SmartTube — бесплатное приложение YouTube для ТВ: без рекламы, со SponsorBlock (пропуск спонсорских вставок), вход в свой аккаунт Google.\n\nСкачать: github.com/yuliskov/SmartTube (на телевизоре — через приложение Downloader или с телефона кнопкой ниже).</string>

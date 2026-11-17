@@ -65,6 +65,17 @@ public class SettingsActivity extends Activity {
         findViewById(R.id.openLog).setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         torLine = findViewById(R.id.torLine);
         routeValues = getResources().getStringArray(R.array.route_values);
+        // «Через разработчика» — только в сборках с кодом подключения (dev-code.txt).
+        if (BuildConfig.DEV_AVAILABLE) {
+            List<String> names = new ArrayList<>(Arrays.asList(getResources().getStringArray(R.array.route_names)));
+            List<String> values = new ArrayList<>(Arrays.asList(routeValues));
+            names.add(getString(R.string.route_dev));
+            values.add("dev");
+            routeValues = values.toArray(new String[0]);
+            android.widget.ArrayAdapter<String> ad = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_item, names);
+            ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            route.setAdapter(ad);
+        }
         bridgeValues = getResources().getStringArray(R.array.bridge_values);
         heavyValues = getResources().getStringArray(R.array.heavy_values);
         countryValues = getResources().getStringArray(R.array.country_values);
@@ -76,7 +87,23 @@ public class SettingsActivity extends Activity {
         updateVisibility();
 
         route.setOnItemSelectedListener(new Picked() {
-            @Override void picked(int pos) { save("route", routeValues[pos]); }
+            @Override void picked(int pos) {
+                String v = routeValues[pos];
+                if ("dev".equals(v) && !"dev".equals(Prefs.route(SettingsActivity.this))) {
+                    // Предупреждение: разработчик увидит сведения об устройстве.
+                    new AlertDialog.Builder(SettingsActivity.this)
+                            .setTitle(R.string.dev_warn_title)
+                            .setMessage(R.string.dev_warn_text)
+                            .setPositiveButton(R.string.dev_warn_ok, (d, w) -> save("route", "dev"))
+                            .setNegativeButton(R.string.recv_cancel, (d, w) ->
+                                    route.setSelection(Math.max(0, Arrays.asList(routeValues).indexOf(Prefs.route(SettingsActivity.this)))))
+                            .setOnCancelListener(d ->
+                                    route.setSelection(Math.max(0, Arrays.asList(routeValues).indexOf(Prefs.route(SettingsActivity.this)))))
+                            .show();
+                    return;
+                }
+                save("route", v);
+            }
         });
         country.setOnItemSelectedListener(new Picked() {
             @Override void picked(int pos) { save("country", countryValues[pos]); }

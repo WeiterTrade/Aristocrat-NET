@@ -58,7 +58,7 @@ final class Prefs {
     /** Нужен ли Tor при текущих настройках. */
     static boolean needTor(Context c) {
         String r = route(c);
-        if ("tor".equals(r)) return true;
+        if ("tor".equals(r) || "dev".equals(r)) return true; // к разработчику — через Tor
         if (!"auto".equals(r)) return false;
         return !"warp".equals(heavy(c));
     }
