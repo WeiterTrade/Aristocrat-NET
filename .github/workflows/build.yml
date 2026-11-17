@@ -62,8 +62,11 @@ jobs:
         run: |
           go vet ./...
           go test -count=1 ./...
+          go vet -tags dev .
+          go test -count=1 -tags dev -run 'Dev' .
           for t in windows/386 windows/amd64 linux/amd64 linux/arm64; do
             GOOS=${t%/*} GOARCH=${t#*/} go vet ./...
+            GOOS=${t%/*} GOARCH=${t#*/} go vet -tags dev .
           done
 
   windows:
@@ -113,11 +116,22 @@ jobs:
           END
           RC
           i686-w64-mingw32-windres -O coff -i obhod.rc -o rsrc_windows_386.syso
+      - name: Код подключения и пароль разработчика (секреты DEV_CODE и DEV_PASSWORD)
+        env:
+          DEV_CODE: ${{ secrets.DEV_CODE }}
+          DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
+        run: |
+          echo "DEVCODE=$(bash scripts/dev-code.sh)" >> "$GITHUB_ENV"
+          echo "DEVHASH=$(cd core && go run ./tools/devhash)" >> "$GITHUB_ENV"
+          [ -n "$DEV_PASSWORD" ] || echo "::warning::Секрет DEV_PASSWORD не задан — в сборке разработчика режим не откроется"
       - name: Сборка Obhod.exe (x86, работает на Windows 7–11 x86/x64)
         working-directory: core
         run: |
           CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -trimpath \
-            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V" -o ../build/win/Obhod.exe .
+            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devCode=$DEVCODE" -o ../build/win/Obhod.exe .
+          # Сборка разработчика: раздача через Tor, пароль — только хэш из секрета DEV_PASSWORD.
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags dev -trimpath \
+            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devPassHash=$DEVHASH" -o ../build/win/ObhodDev.exe .
       - name: Tor для Windows 7/8 (ветка 13.5)
         run: bash scripts/fetch-tor.sh windows-i686 build/win/tor-legacy "$TOR_LEGACY"
       - name: Tor для Windows 10/11 (актуальный)
@@ -164,18 +178,32 @@ jobs:
           choco install innosetup --version=6.2.2 --allow-downgrade --force -y --no-progress
           if ($LASTEXITCODE -ne 0) { Write-Host "Не удалось поставить 6.2.2 — используется Inno Setup из образа" }
           exit 0
-      - name: Установщик (Inno Setup)
+      - name: Установщики Inno Setup — для пользователей и для разработчика
         shell: pwsh
         run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          New-Item -ItemType Directory -Force dist, dist-dev | Out-Null
+          # Для разработчика — та же папка, но Obhod.exe из сборки разработчика.
+          Copy-Item -Recurse build/win build/win-dev
+          Move-Item -Force build/win-dev/ObhodDev.exe build/win-dev/Obhod.exe
+          Remove-Item build/win/ObhodDev.exe
           $src = (Resolve-Path build/win).Path
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DVERSION=$env:V" "/DVIVERSION=$env:WV" "/DSRC=$src" packaging/windows/obhod.iss
+          & $iscc /Q "/DVERSION=$env:V" "/DVIVERSION=$env:WV" "/DSRC=$src" packaging/windows/obhod.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Force dist | Out-Null
           Move-Item packaging/windows/AristocratNET-Setup-*.exe dist/
+          $src = (Resolve-Path build/win-dev).Path
+          & $iscc /Q "/DVERSION=$env:V" "/DVIVERSION=$env:WV" "/DSRC=$src" /DDEV=1 packaging/windows/obhod.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item packaging/windows/AristocratNET-Dev-Setup-*.exe dist-dev/
       - uses: actions/upload-artifact@v4
         with:
           name: windows-setup
           path: dist/*
+      # Сборка разработчика — только среди файлов запуска (Actions), в релиз не попадает.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: _dev-windows
+          path: dist-dev/*
 
   linux:
     needs: [version, test]
@@ -198,11 +226,20 @@ jobs:
           go mod download
       - name: Библиотеки окна (GTK3, WebKitGTK 4.1)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+      - name: Код подключения и пароль разработчика (секреты DEV_CODE и DEV_PASSWORD)
+        env:
+          DEV_CODE: ${{ secrets.DEV_CODE }}
+          DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
+        run: |
+          echo "DEVCODE=$(bash scripts/dev-code.sh)" >> "$GITHUB_ENV"
+          echo "DEVHASH=$(cd core && go run ./tools/devhash)" >> "$GITHUB_ENV"
       - name: Сборка obhod (linux/amd64, нативное окно + трей)
         working-directory: core
         run: |
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags gui -trimpath \
-            -ldflags "-s -w -X main.appVersion=$V" -o ../build/linux/obhod .
+            -ldflags "-s -w -X main.appVersion=$V -X main.devCode=$DEVCODE" -o ../build/linux/obhod .
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags "gui dev" -trimpath \
+            -ldflags "-s -w -X main.appVersion=$V -X main.devPassHash=$DEVHASH" -o ../build/obhod-dev .
       - name: Tor для Linux
         run: bash scripts/fetch-tor.sh linux-x86_64 build/linux/tor
       - name: nfpm
@@ -217,10 +254,19 @@ jobs:
           VERSION="$V" nfpm package -f packaging/linux/nfpm.yaml -p rpm -t dist/
           tar czf "dist/obhod-$V-linux-amd64.tar.gz" -C build/linux obhod tor
           ls -la dist
+          # Сборка разработчика (DEB): тот же пакет, но программа — из сборки разработчика.
+          mkdir -p dist-dev
+          cp build/obhod-dev build/linux/obhod
+          VERSION="$V" nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist-dev/
+          for f in dist-dev/*.deb; do mv "$f" "dist-dev/AristocratNET-Dev-$V-linux-amd64.deb"; done
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: _dev-linux
+          path: dist-dev/*
 
   android:
     needs: [version, test]
@@ -261,6 +307,14 @@ jobs:
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           [ -d "$ANDROID_HOME/ndk/$NDKV" ] || (yes | "$SDKM" --install "ndk;$NDKV" > /dev/null)
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDKV" >> "$GITHUB_ENV"
+      - name: Код подключения к разработчику (секрет DEV_CODE)
+        env:
+          DEV_CODE: ${{ secrets.DEV_CODE }}
+        run: |
+          DC=$(bash scripts/dev-code.sh)
+          echo "DEVCODE=$DC" >> "$GITHUB_ENV"
+          # Приложение видит файл и показывает «Через разработчика»; сам код вшивается в ядро.
+          if [ -n "$DC" ]; then printf '%s\n' "$DC" > dev-code.txt; fi
       - name: Нативные части (ядро, lyrebird, hev-socks5-tunnel)
         run: bash scripts/build-android-natives.sh "$V"
       - name: Ключ подписи (если задан в секретах)
