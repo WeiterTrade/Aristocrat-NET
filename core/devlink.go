@@ -36,7 +36,7 @@ const (
 
 func init() {
 	if devAvailable() {
-		RouteNames[RouteDev] = "Через разработчика (IP Казахстана)"
+		RouteNames[RouteDev] = "Эдик на Чукотке"
 	}
 }
 
@@ -79,6 +79,7 @@ type DevLink struct {
 	logf  func(string, ...any)
 
 	mu      sync.Mutex
+	lastErr string // причина последней неудачи (для журнала)
 	state   string // "", "connecting", "ready", "down"
 	checked time.Time
 	running bool
@@ -159,7 +160,10 @@ func (d *DevLink) Watch(active func() bool) {
 				case "ready":
 					d.logf("Разработчик на связи — трафик идёт через его компьютер")
 				case "down":
-					d.logf("Компьютер разработчика сейчас недоступен — работает обычный режим")
+					d.mu.Lock()
+					why := d.lastErr
+					d.mu.Unlock()
+					d.logf("Компьютер разработчика сейчас недоступен (%s) — работает обычный режим", why)
 				}
 				last = st
 			}
@@ -175,6 +179,12 @@ func (d *DevLink) Watch(active func() bool) {
 }
 
 func (d *DevLink) probe() string {
+	d.mu.Lock()
+	first := d.state == ""
+	d.mu.Unlock()
+	if first {
+		d.logf("Подключаюсь к компьютеру разработчика (%s…) — первый раз это занимает до минуты", d.onion[:8])
+	}
 	if !d.Tor.WaitReady(0) {
 		d.mu.Lock()
 		if d.state == "" {
@@ -186,13 +196,16 @@ func (d *DevLink) probe() string {
 		}
 	}
 	for i := 0; i < 2; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		c, err := d.dialSOCKS(ctx, devPingHost, 1)
 		cancel()
 		if err == nil {
 			c.Close()
 			return "ready"
 		}
+		d.mu.Lock()
+		d.lastErr = err.Error()
+		d.mu.Unlock()
 	}
 	return "down"
 }
