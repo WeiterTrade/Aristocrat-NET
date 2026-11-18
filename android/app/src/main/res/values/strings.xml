@@ -28,7 +28,7 @@
     <string name="log_label_row">Журнал  ›</string>
     <string name="other_label">Другие</string>
     <string name="ads_label">Реклама</string>
-    <string name="route_dev">Через разработчика (IP Казахстана)</string>
+    <string name="route_dev">Эдик на Чукотке</string>
     <string name="dev_warn_title">Подключиться через разработчика?</string>
     <string name="dev_warn_text">Интернет пойдёт через компьютер разработчика в Казахстане: сайты увидят казахстанский IP.\n\nРазработчик увидит имя вашего устройства, ваш IP-адрес, город и страну, версию приложения и объём трафика.</string>
     <string name="dev_warn_ok">Подключиться</string>
