@@ -900,6 +900,7 @@ func main() {
 		geoTor     = flag.String("geo-tor", "", "в России Spotify и подобное через Tor: on | off")
 		adblock    = flag.String("adblock", "", "блокировка рекламы: on | off")
 		deviceName = flag.String("device-name", "", "имя устройства для журнала разработчика (Android)")
+		devAvail   = flag.Bool("dev-available", false, "напечатать yes, если в сборке есть код подключения к разработчику, и выйти")
 		torLog     = flag.String("tor-log", "", "журнал внешнего Tor (Android): torrc пишет его, ядро читает")
 		stratFlag  = flag.String("strategy", "", "метод обхода DPI: auto | tlsrec | split | ...")
 		dohFlag    = flag.String("doh", "", "DoH: cloudflare | google | quad9")
@@ -914,6 +915,14 @@ func main() {
 		minimized  = flag.Bool("minimized", false, "запуститься свёрнутым в трей")
 	)
 	flag.Parse()
+	if *devAvail { // Android: есть ли в ядре код подключения к разработчику
+		if devAvailable() {
+			fmt.Print("yes")
+		} else {
+			fmt.Print("no")
+		}
+		return
+	}
 	if *version {
 		fmt.Println(appName, appVersion)
 		return
