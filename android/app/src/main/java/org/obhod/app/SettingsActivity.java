@@ -66,7 +66,7 @@ public class SettingsActivity extends Activity {
         torLine = findViewById(R.id.torLine);
         routeValues = getResources().getStringArray(R.array.route_values);
         // «Через разработчика» — только в сборках с кодом подключения (dev-code.txt).
-        if (BuildConfig.DEV_AVAILABLE) {
+        if (Prefs.devAvailable(this)) {
             List<String> names = new ArrayList<>(Arrays.asList(getResources().getStringArray(R.array.route_names)));
             List<String> values = new ArrayList<>(Arrays.asList(routeValues));
             names.add(getString(R.string.route_dev));

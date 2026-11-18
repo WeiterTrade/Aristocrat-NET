@@ -99,9 +99,11 @@ public class MainActivity extends Activity {
             ver = " " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
         }
+        String text = getString(R.string.about_text) + "\n\nРежим «Через разработчика»: "
+                + (Prefs.devAvailable(this) ? "есть в этой сборке" : "нет в этой сборке (не задан код подключения)");
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_name) + ver)
-                .setMessage(R.string.about_text)
+                .setMessage(text)
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
     }

@@ -55,6 +55,28 @@ final class Prefs {
 
     static String custom(Context c) { return get(c).getString("custom", ""); }
 
+    private static Boolean devAvailable;
+
+    /**
+     * Есть ли в сборке код подключения к разработчику. Проверяется у самого ядра (код вшит в libobhod.so),
+     * а признак из сборки (BuildConfig) — запасной.
+     */
+    static synchronized boolean devAvailable(Context c) {
+        if (devAvailable != null) return devAvailable;
+        boolean ok = BuildConfig.DEV_AVAILABLE;
+        try {
+            java.io.File core = new java.io.File(c.getApplicationInfo().nativeLibraryDir, "libobhod.so");
+            Process p = new ProcessBuilder(core.getAbsolutePath(), "-dev-available").redirectErrorStream(true).start();
+            byte[] buf = new byte[16];
+            int n = p.getInputStream().read(buf);
+            p.waitFor();
+            if (n > 0 && new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8).trim().equals("yes")) ok = true;
+        } catch (Exception ignored) {
+        }
+        devAvailable = ok;
+        return ok;
+    }
+
     /** Нужен ли Tor при текущих настройках. */
     static boolean needTor(Context c) {
         String r = route(c);
