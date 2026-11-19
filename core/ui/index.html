@@ -352,6 +352,7 @@ $('page').addEventListener('click', async e => {
     await save({ [k]: v }); go('root');
   }
   else if (a === 'devunlock') devUnlock();
+  else if (a === 'devexit') { try { render(await api('dev/exit', { on: !S.dev.exit })); } catch (e) { toast(e.message); } }
   else if (a === 'devshare') { try { render(await api('dev/share', { on: !S.dev.share })); } catch (e) { toast(e.message); } }
   else if (a === 'devlock') { if (confirm('Выключить режим разработчика? Раздача тоже выключится.')) { render(await api('dev/lock', {})); } }
   else if (a === 'devcode') { if (S.dev.code) { await copyText(S.dev.code); toast('Код скопирован — вставьте его в секрет DEV_DIRECT'); } else toast('Сначала включите раздачу'); }
@@ -400,6 +401,7 @@ function devSection(s) {
   if (!d.mode) return sec('Разработчик', [row({ t: 'Режим разработчика', v: 'Выключен', nav: 1, a: 'go:devlogin' })]);
   return sec('Разработчик', [
     row({ t: 'Раздача интернета', s: d.status, toggle: !!d.share, a: 'devshare' }),
+    row({ t: 'Выход в интернет через этот компьютер', s: d.exit_status, toggle: !!d.exit, a: 'devexit' }),
     row({ t: 'Ключ и код подключения', nav: 1, a: 'go:devkey' }),
     row({ t: 'Журнал подключений', nav: 1, a: 'go:devlog' }),
     row({ t: 'Выключить режим разработчика', danger: 1, a: 'devlock' }),

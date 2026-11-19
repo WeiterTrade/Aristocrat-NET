@@ -134,3 +134,212 @@ func TestDirectShareEndToEnd(t *testing.T) {
 		t.Fatal("подключился к серверу с чужим сертификатом")
 	}
 }
+
+// delayProxy — TCP-посредник с задержкой в каждую сторону (имитация дальнего сервера).
+func delayProxy(t *testing.T, target string, oneWay time.Duration) string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	pump := func(dst, src net.Conn) {
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := src.Read(buf)
+			if n > 0 {
+				time.Sleep(oneWay)
+				if _, werr := dst.Write(buf[:n]); werr != nil {
+					break
+				}
+			}
+			if err != nil {
+				break
+			}
+		}
+		dst.Close()
+		src.Close()
+	}
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			s, err := net.Dial("tcp", target)
+			if err != nil {
+				c.Close()
+				continue
+			}
+			go pump(s, c)
+			go pump(c, s)
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestDirectLinkLatencyAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	a := &App{dir: dir}
+	a.s = defaultSettings()
+	a.s.Route = RouteDPI
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	a.s.DevDirectPort = ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	a.res = NewResolver("cloudflare", t.Logf)
+	a.eng = NewEngine(a.res, t.Logf)
+	a.tor = NewTor(t.Logf)
+	a.warp = NewWarp(dir, t.Logf)
+	a.ads = NewAdBlock(dir, nil)
+	d := newDevServer(a)
+	if err := d.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer d.Stop()
+	_, fp, tok, _ := d.directIdentity()
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") }))
+	defer site.Close()
+	_, p, _ := net.SplitHostPort(strings.TrimPrefix(site.URL, "http://"))
+	pn, _ := strconv.Atoi(p)
+
+	const oneWay = 40 * time.Millisecond // отклик 80 мс
+	px := delayProxy(t, net.JoinHostPort("127.0.0.1", strconv.Itoa(a.s.DevDirectPort)), oneWay)
+	_, pxPort, _ := net.SplitHostPort(px)
+	old := devDirectCode
+	defer func() { devDirectCode = old }()
+	devDirectCode = fmt.Sprintf("d1:127.0.0.1:%s:%s:%s", pxPort, fp, tok)
+	dl := NewDirectLink(t.TempDir(), t.Logf)
+	get := func() time.Duration {
+		t0 := time.Now()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		c, err := dl.Dial(ctx, "127.0.0.1", pn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		el := time.Since(t0)
+		io.WriteString(c, "GET / HTTP/1.0\r\nHost: x\r\n\r\n")
+		b, _ := io.ReadAll(c)
+		c.Close()
+		if !strings.Contains(string(b), "ok") {
+			t.Fatalf("ответ: %q", b)
+		}
+		return el
+	}
+	cold := get()
+	time.Sleep(time.Second) // запас наполнится
+	warm := get()
+	t.Logf("подключение: холодное %v, из запаса %v (отклик 80 мс)", cold, warm)
+	if cold > 6*2*oneWay {
+		t.Fatalf("холодное подключение слишком долгое: %v (больше 6 обменов)", cold)
+	}
+	if warm > 2*2*oneWay {
+		t.Fatalf("подключение из запаса слишком долгое: %v", warm)
+	}
+	// Сервер перезапущен — заготовленные соединения мертвы, подключение всё равно проходит.
+	time.Sleep(500 * time.Millisecond)
+	d.Stop()
+	if err := d.Start(); err != nil {
+		t.Fatal(err)
+	}
+	get()
+}
+
+// Пользователь → сервер раздачи → компьютер-выход → сайт.
+func TestExitThroughDevComputer(t *testing.T) {
+	oldHash := devPassHash
+	defer func() { devPassHash = oldHash }()
+	devPassHash = hex.EncodeToString(pbkdf2SHA256([]byte("testpass123"), []byte(devPassSalt), 1))
+
+	mk := func() *App {
+		dir := t.TempDir()
+		a := &App{dir: dir}
+		a.s = defaultSettings()
+		a.s.Route = RouteDPI
+		a.res = NewResolver("cloudflare", t.Logf)
+		a.eng = NewEngine(a.res, t.Logf)
+		a.tor = NewTor(t.Logf)
+		a.warp = NewWarp(dir, t.Logf)
+		a.ads = NewAdBlock(dir, nil)
+		return a
+	}
+	srvApp := mk()
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	srvApp.s.DevDirectPort = ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	srv := newDevServer(srvApp)
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+	_, fp, tok, _ := srv.directIdentity()
+	old := devDirectCode
+	defer func() { devDirectCode = old }()
+	devDirectCode = fmt.Sprintf("d1:127.0.0.1:%d:%s:%s", srvApp.s.DevDirectPort, fp, tok)
+
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "kz-ok") }))
+	defer site.Close()
+	_, p, _ := net.SplitHostPort(strings.TrimPrefix(site.URL, "http://"))
+	pn, _ := strconv.Atoi(p)
+
+	// компьютер-выход
+	kz := newDevServer(mk())
+	if err := kz.StartExit(); err != nil {
+		t.Fatal(err)
+	}
+	defer kz.StopExit()
+	for i := 0; i < 100 && !srv.exitRecent(); i++ {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !srv.exitRecent() {
+		t.Fatalf("выход не подключился: %s", kz.ExitStatus())
+	}
+	if st := srv.Status(); !strings.Contains(st, "выход через компьютер") {
+		t.Fatalf("состояние сервера: %s", st)
+	}
+	dl := NewDirectLink(t.TempDir(), t.Logf)
+	get := func() string {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		c, err := dl.Dial(ctx, "127.0.0.1", pn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.WriteString(c, "GET / HTTP/1.0\r\nHost: x\r\n\r\n")
+		b, _ := io.ReadAll(c)
+		c.Close()
+		return string(b)
+	}
+	before := kz.agent.eng.total.Load()
+	for i := 0; i < 20; i++ {
+		if b := get(); !strings.Contains(b, "kz-ok") {
+			t.Fatalf("ответ: %q", b)
+		}
+	}
+	if n := kz.agent.eng.total.Load() - before; n < 20 {
+		t.Fatalf("через выход прошло %d из 20 подключений", n)
+	}
+	// выход выключен — сервер открывает сайты сам
+	kz.StopExit()
+	srv.exits.mu.Lock()
+	srv.exits.seen = time.Time{}
+	srv.exits.mu.Unlock()
+	if b := get(); !strings.Contains(b, "kz-ok") {
+		t.Fatalf("без выхода: %q", b)
+	}
+	// чужой пароль выхода — не пускают
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, err := dl.dialTo(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	user, pass := exitUserPrefix+tok, strings.Repeat("0", 64)
+	msg := append([]byte{5, 1, 2, 1, byte(len(user))}, user...)
+	msg = append(append(msg, byte(len(pass))), pass...)
+	c.Write(msg)
+	r := make([]byte, 4)
+	if _, err := io.ReadFull(c, r); err != nil || r[3] == 0 {
+		t.Fatalf("чужой выход пущен: %v %v", r, err)
+	}
+}

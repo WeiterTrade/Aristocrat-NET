@@ -92,7 +92,9 @@ type DevServer struct {
 	clients map[string]*devClient
 	journal []string
 
-	direct     *Engine // раздача (белый IP, TLS на внешнем порту)
+	direct     *Engine    // раздача (белый IP, TLS на внешнем порту)
+	exits      exitPool   // сервер: соединения от компьютера-выхода
+	agent      *exitAgent // этот компьютер — выход для сервера
 	directPort int
 	directErr  string
 }
@@ -119,7 +121,7 @@ func (d *DevServer) shareEngine(auth *ShareAuth) *Engine {
 	a := d.a
 	eng := NewEngine(a.res, func(string, ...any) {})
 	route := a.settings().Route
-	if route == RouteMoscow || RouteNames[route] == "" {
+	if route != RouteWarp && route != RouteTor { // раздача — всегда с полным обходом («Авто»)
 		route = RouteAuto
 	}
 	eng.Route.Store(route)
@@ -128,7 +130,6 @@ func (d *DevServer) shareEngine(auth *ShareAuth) *Engine {
 	eng.Ads = a.ads
 	eng.BlockQUIC = true
 	eng.Share = auth
-	go a.startUpstreams(false) // WARP и Tor для обхода — даже если обход на самом компьютере выключен
 	return eng
 }
 
@@ -400,9 +401,10 @@ func (a *App) devUnlock(pass string) error {
 func (a *App) devLock() {
 	if a.dev != nil {
 		a.dev.Stop()
+		a.dev.StopExit()
 	}
 	a.mu.Lock()
-	a.s.DevMode, a.s.DevDirect = false, false
+	a.s.DevMode, a.s.DevDirect, a.s.DevExit = false, false, false
 	a.mu.Unlock()
 	a.save()
 }
@@ -423,12 +425,36 @@ func (a *App) devSetShare(on bool) error {
 	return nil
 }
 
+// devSetExit включает или выключает выход в интернет через этот компьютер.
+func (a *App) devSetExit(on bool) error {
+	if a.dev == nil || !a.settings().DevMode {
+		return errors.New("режим разработчика выключен")
+	}
+	a.mu.Lock()
+	a.s.DevExit = on
+	a.mu.Unlock()
+	a.save()
+	if on {
+		return a.dev.StartExit()
+	}
+	a.dev.StopExit()
+	return nil
+}
+
 func (a *App) devInit() {
 	a.dev = newDevServer(a)
-	if st := a.settings(); st.DevMode && st.DevDirect {
+	st := a.settings()
+	if st.DevMode && st.DevDirect {
 		go func() {
 			if err := a.dev.Start(); err != nil {
 				a.logf("Раздача: %v", err)
+			}
+		}()
+	}
+	if st.DevMode && st.DevExit {
+		go func() {
+			if err := a.dev.StartExit(); err != nil {
+				a.logf("Выход: %v", err)
 			}
 		}()
 	}
@@ -437,6 +463,7 @@ func (a *App) devInit() {
 func (a *App) devStop() {
 	if a.dev != nil {
 		a.dev.Stop()
+		a.dev.StopExit()
 	}
 }
 
@@ -450,6 +477,8 @@ func (a *App) devState() map[string]any {
 		m["status"] = a.dev.Status()
 		m["code"] = code
 		m["clouds"] = CloudDirs()
+		m["exit"] = a.dev.ExitOn()
+		m["exit_status"] = a.dev.ExitStatus()
 	}
 	return m
 }
@@ -535,11 +564,20 @@ func (d *DevServer) Start() error {
 	}
 	allowFirewall(port)
 	eng := d.shareEngine(&ShareAuth{Check: func(user, pass string) *ShareClient {
+		if user == exitUserPrefix+tok {
+			if sec := exitSecret(); sec != "" && hmac.Equal([]byte(pass), []byte(sec)) {
+				return &ShareClient{Exit: true}
+			}
+			return nil
+		}
 		if len(user) != 48 || !hmac.Equal([]byte(user[:32]), []byte(tok)) {
 			return nil
 		}
 		return d.check(user[32:], pass)
-	}})
+	}, OnExit: d.holdExit, Exit: d.dialExit})
+	a := d.a
+	a.sharing.Store(true)
+	go a.startUpstreams(false)
 	eng.Serve(ln)
 	d.mu.Lock()
 	d.direct, d.directPort, d.directErr = eng, port, ""
@@ -555,6 +593,7 @@ func (d *DevServer) Stop() {
 	d.mu.Unlock()
 	if eng != nil {
 		eng.Stop()
+		d.a.sharing.Store(d.ExitOn())
 		d.a.logf("Раздача выключена")
 	}
 }
@@ -576,7 +615,7 @@ func (d *DevServer) Status() string {
 		}
 		return "Выключена"
 	}
-	return fmt.Sprintf("Работает: порт %d, подключено: %d", port, active)
+	return fmt.Sprintf("Работает: порт %d, подключено: %d · %s", port, active, d.exitServerStatus())
 }
 
 // Code — код для секрета GitHub DEV_DIRECT.

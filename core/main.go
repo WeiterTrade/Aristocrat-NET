@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -76,6 +77,7 @@ type Settings struct {
 	CloseAction   string            `json:"close_action"`              // крестик окна: "" — спрашивать, tray — в трей, quit — выход
 	DevMode       bool              `json:"dev_mode,omitempty"`        // сборка разработчика: режим разработчика включён (по паролю)
 	DevDirect     bool              `json:"dev_direct,omitempty"`      // сборка разработчика: раздача включена
+	DevExit       bool              `json:"dev_exit,omitempty"`        // сборка разработчика: этот компьютер — выход в интернет для сервера
 	DevDirectPort int               `json:"dev_direct_port,omitempty"` // её порт (0 — 443, если занят — 8443)
 	Learned       map[string]string `json:"learned"`
 	Ver           int               `json:"ver"`
@@ -136,10 +138,11 @@ type App struct {
 	proxyErr string
 	torErr   string
 	ads      *AdBlock
-	dev      *DevServer // раздача интернета (только сборка разработчика)
-	share    *Share     // передача мостов в локальной сети (на ПК; на Android — в приложении)
-	hideUI   func()     // Linux: закрыть окно WebKitGTK (программа остаётся в трее)
-	showUI   func()     // показать окно программы (нативное окно на Windows, браузер на Linux)
+	dev      *DevServer  // раздача интернета (только сборка разработчика)
+	sharing  atomic.Bool // идёт раздача
+	share    *Share      // передача мостов в локальной сети (на ПК; на Android — в приложении)
+	hideUI   func()      // Linux: закрыть окно WebKitGTK (программа остаётся в трее)
+	showUI   func()      // показать окно программы (нативное окно на Windows, браузер на Linux)
 }
 
 func (a *App) logf(f string, args ...any) {
@@ -371,6 +374,9 @@ func (a *App) needs() (warp, tor bool) {
 	a.mu.Lock()
 	st, cc := a.s, a.country
 	a.mu.Unlock()
+	if a.sharing.Load() && (st.Route == RouteDPI || st.Route == RouteMoscow) {
+		st.Route = RouteAuto // идёт раздача: ей нужен полный обход (WARP и Tor)
+	}
 	warp, tor = st.needs()
 	if st.GeoTor && cc == "RU" && st.Route != RouteDPI {
 		tor = true
@@ -552,7 +558,7 @@ func (a *App) disable() {
 	a.mu.Unlock()
 	UnsetSystemProxy(port)
 	a.eng.Stop()
-	if a.dev != nil && a.dev.On() {
+	if a.sharing.Load() {
 		return // идёт раздача: WARP и Tor нужны ей (обход для подключённых пользователей)
 	}
 	a.tor.Stop()
@@ -797,6 +803,16 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if devErr(w, a.devSetShare(req.On)) {
+			return
+		}
+		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/dev/exit", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			On bool `json:"on"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if devErr(w, a.devSetExit(req.On)) {
 			return
 		}
 		writeJSON(w, 200, a.state())

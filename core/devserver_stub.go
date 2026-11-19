@@ -23,12 +23,15 @@ func (d *DevServer) SaveKey(string) error              { return errNoDev }
 func (d *DevServer) SaveKeyToCloud() ([]string, error) { return nil, errNoDev }
 func (d *DevServer) JournalText() string               { return "" }
 func (d *DevServer) ClearJournal()                     {}
+func (d *DevServer) ExitOn() bool                      { return false }
+func (d *DevServer) ExitStatus() string                { return "" }
 
 func CloudDirs() []string { return nil }
 
 func (a *App) devUnlock(string) error   { return errNoDev }
 func (a *App) devLock()                 {}
 func (a *App) devSetShare(bool) error   { return errNoDev }
+func (a *App) devSetExit(bool) error    { return errNoDev }
 func (a *App) devInit()                 {}
 func (a *App) devStop()                 {}
 func (a *App) devState() map[string]any { return map[string]any{"build": false} }

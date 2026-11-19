@@ -35,8 +35,12 @@ type DevLink struct {
 	dialTo func(ctx context.Context) (net.Conn, error) // TLS до прокси раздачи
 
 	mu      sync.Mutex
-	lastErr string // причина последней неудачи (для журнала)
-	state   string // "", "connecting", "ready", "down"
+	pool    []warmConn // заранее открытые соединения (TCP+TLS уже готовы)
+	lastUse time.Time
+	filling bool
+	rtt     time.Duration // отклик сервера (последняя проверка)
+	lastErr string        // причина последней неудачи (для журнала)
+	state   string        // "", "connecting", "ready", "down"
 	checked time.Time
 	running bool
 }
@@ -109,7 +113,10 @@ func (d *DevLink) Watch(active func() bool) {
 			if st != last {
 				switch st {
 				case "ready":
-					d.logf("На связи %s — трафик идёт через него", d.label)
+					d.mu.Lock()
+					rtt := d.rtt
+					d.mu.Unlock()
+					d.logf("На связи %s (отклик %d мс) — трафик идёт через него", d.label, rtt.Milliseconds())
 				case "down":
 					d.mu.Lock()
 					why := d.lastErr
@@ -138,10 +145,14 @@ func (d *DevLink) probe() string {
 	}
 	for i := 0; i < 2; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		c, err := d.dialSOCKS(ctx, devPingHost, 1)
+		t0 := time.Now()
+		c, err := d.socks(ctx, devPingHost, 1, false) // проверка — без запаса соединений
 		cancel()
 		if err == nil {
 			c.Close()
+			d.mu.Lock()
+			d.rtt = time.Since(t0)
+			d.mu.Unlock()
 			return "ready"
 		}
 		d.mu.Lock()
@@ -157,22 +168,98 @@ func (d *DevLink) Dial(ctx context.Context, host string, port int) (net.Conn, er
 	return d.dialSOCKS(ctx, host, port)
 }
 
-// dialSOCKS: TLS до сервера раздачи → SOCKS5 с логином → CONNECT host:port.
-func (d *DevLink) dialSOCKS(ctx context.Context, host string, port int) (net.Conn, error) {
+// Заранее открытые соединения: TCP и TLS до сервера готовы, остаётся только запрос.
+// Сервер ждёт запрос 15 секунд, поэтому соединение старше warmMaxAge не используется.
+type warmConn struct {
+	c net.Conn
+	t time.Time
+}
+
+const (
+	warmMaxAge = 10 * time.Second
+	warmCount  = 4
+	warmActive = 30 * time.Second // держать запас, пока трафик шёл за последние 30 секунд
+)
+
+// takeConn — готовое соединение из запаса (или новое) и пополнение запаса в фоне.
+func (d *DevLink) takeConn(ctx context.Context) (net.Conn, bool, error) {
+	d.mu.Lock()
+	d.lastUse = time.Now()
+	var c net.Conn
+	for len(d.pool) > 0 && c == nil {
+		w := d.pool[0]
+		d.pool = d.pool[1:]
+		if time.Since(w.t) < warmMaxAge {
+			c = w.c
+		} else {
+			w.c.Close()
+		}
+	}
+	fill := !d.filling
+	d.filling = true
+	d.mu.Unlock()
+	if fill {
+		go d.fill()
+	}
+	if c != nil {
+		return c, true, nil
+	}
 	c, err := d.dialTo(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("недоступен %s: %w", d.label, err)
+	return c, false, err
+}
+
+// fill держит запас соединений, пока через сервер идёт трафик.
+func (d *DevLink) fill() {
+	defer func() { d.mu.Lock(); d.filling = false; d.mu.Unlock() }()
+	for {
+		d.mu.Lock()
+		// выбросить устаревшие
+		fresh := d.pool[:0]
+		for _, w := range d.pool {
+			if time.Since(w.t) < warmMaxAge {
+				fresh = append(fresh, w)
+			} else {
+				w.c.Close()
+			}
+		}
+		d.pool = fresh
+		idle := time.Since(d.lastUse) > warmActive
+		need := warmCount - len(d.pool)
+		if idle {
+			for _, w := range d.pool {
+				w.c.Close()
+			}
+			d.pool = nil
+			d.mu.Unlock()
+			return
+		}
+		d.mu.Unlock()
+		if need <= 0 {
+			time.Sleep(time.Second)
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		c, err := d.dialTo(ctx)
+		cancel()
+		if err != nil {
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		d.mu.Lock()
+		d.pool = append(d.pool, warmConn{c, time.Now()})
+		d.mu.Unlock()
 	}
-	if dl, ok := ctx.Deadline(); ok {
-		_ = c.SetDeadline(dl)
-	}
-	fail := func(e error) (net.Conn, error) { c.Close(); return nil, e }
-	if _, err := c.Write([]byte{5, 1, 2}); err != nil {
-		return fail(err)
-	}
-	r := make([]byte, 2)
-	if _, err := io.ReadFull(c, r); err != nil || r[1] != 2 {
-		return fail(errors.New("разработчик: неверный ответ"))
+}
+
+// dialSOCKS: TLS до сервера раздачи → SOCKS5 с логином → CONNECT host:port.
+// Приветствие, логин и запрос отправляются одним пакетом: один обмен с сервером вместо трёх.
+func (d *DevLink) dialSOCKS(ctx context.Context, host string, port int) (net.Conn, error) {
+	return d.socks(ctx, host, port, true)
+}
+
+func (d *DevLink) socks(ctx context.Context, host string, port int, usePool bool) (net.Conn, error) {
+	if len(host) > 255 {
+		return nil, errors.New("слишком длинное имя")
 	}
 	user, pass := d.prefix+d.id, ""
 	if d.Info != nil {
@@ -181,35 +268,74 @@ func (d *DevLink) dialSOCKS(ctx context.Context, host string, port int) (net.Con
 	if len(pass) > 255 {
 		pass = pass[:255]
 	}
-	auth := append([]byte{1, byte(len(user))}, user...)
-	auth = append(append(auth, byte(len(pass))), pass...)
-	if _, err := c.Write(auth); err != nil {
-		return fail(err)
-	}
-	if _, err := io.ReadFull(c, r); err != nil || r[1] != 0 {
-		return fail(errors.New("разработчик не принял подключение"))
-	}
-	if len(host) > 255 {
-		return fail(errors.New("слишком длинное имя"))
-	}
-	req := []byte{5, 1, 0}
+	msg := []byte{5, 1, 2, 1, byte(len(user))}
+	msg = append(msg, user...)
+	msg = append(append(msg, byte(len(pass))), pass...)
+	msg = append(msg, 5, 1, 0)
 	if ip := net.ParseIP(host); ip != nil && ip.To4() != nil {
-		req = append(append(req, 1), ip.To4()...)
+		msg = append(append(msg, 1), ip.To4()...)
 	} else if ip != nil {
-		req = append(append(req, 4), ip.To16()...)
+		msg = append(append(msg, 4), ip.To16()...)
 	} else {
-		req = append(append(req, 3, byte(len(host))), host...)
+		msg = append(append(msg, 3, byte(len(host))), host...)
 	}
-	req = binary.BigEndian.AppendUint16(req, uint16(port))
-	if _, err := c.Write(req); err != nil {
+	msg = binary.BigEndian.AppendUint16(msg, uint16(port))
+	for attempt := 0; ; attempt++ {
+		var c net.Conn
+		var warm bool
+		var err error
+		if usePool {
+			c, warm, err = d.takeConn(ctx)
+		} else {
+			c, err = d.dialTo(ctx)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("недоступен %s: %w", d.label, err)
+		}
+		c, err = d.socksOn(ctx, c, msg, host)
+		if err == nil {
+			return c, nil
+		}
+		var re *remoteErr
+		if !warm || attempt > 0 || errors.As(err, &re) {
+			return nil, err
+		}
+		// заготовленное соединение оказалось закрытым — ещё раз с новым
+	}
+}
+
+// remoteErr — сервер ответил отказом (повторять бессмысленно).
+type remoteErr struct{ msg string }
+
+func (e *remoteErr) Error() string { return e.msg }
+
+func (d *DevLink) socksOn(ctx context.Context, c net.Conn, msg []byte, host string) (net.Conn, error) {
+	if dl, ok := ctx.Deadline(); ok {
+		_ = c.SetDeadline(dl)
+	}
+	fail := func(e error) (net.Conn, error) { c.Close(); return nil, e }
+	if _, err := c.Write(msg); err != nil {
 		return fail(err)
+	}
+	r := make([]byte, 2)
+	if _, err := io.ReadFull(c, r); err != nil {
+		return fail(err)
+	}
+	if r[1] != 2 {
+		return fail(&remoteErr{"разработчик: неверный ответ"})
+	}
+	if _, err := io.ReadFull(c, r); err != nil {
+		return fail(err)
+	}
+	if r[1] != 0 {
+		return fail(&remoteErr{"разработчик не принял подключение"})
 	}
 	hdr := make([]byte, 4)
 	if _, err := io.ReadFull(c, hdr); err != nil {
 		return fail(err)
 	}
 	if hdr[1] != 0 {
-		return fail(fmt.Errorf("разработчик: не удалось подключиться к %s (код %d)", host, hdr[1]))
+		return fail(&remoteErr{fmt.Sprintf("разработчик: не удалось подключиться к %s (код %d)", host, hdr[1])})
 	}
 	skip := 0
 	switch hdr[3] {

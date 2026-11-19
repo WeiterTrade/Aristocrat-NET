@@ -259,13 +259,19 @@ func (e *Engine) viaFirst(host string) (Upstream, error) {
 	if isLocalAddr(host) {
 		return nil, nil
 	}
-	// Сервис закрыт для страны пользователя (Spotify в России) — через Tor в любом режиме.
-	if e.Local.NeedsForeignIP(host) && e.torOn() {
-		return e.Tor, nil
-	}
 	// Российские и казахстанские сайты — напрямую, с настоящим IP, в любом режиме.
 	if e.Local.Direct(host) {
 		return nil, nil
+	}
+	// «Ебаная Чукотка»: всё остальное (и YouTube) — через сервер разработчика, пока он отвечает.
+	if e.route() == RouteMoscow {
+		if l := e.devLink(); l != nil && l.WaitReady(0) {
+			return l, nil
+		}
+	}
+	// Сервис закрыт для страны пользователя (Spotify в России) — через Tor в любом режиме.
+	if e.Local.NeedsForeignIP(host) && e.torOn() {
+		return e.Tor, nil
 	}
 	// YouTube в России — с российским IP (без рекламы): напрямую с обходом замедления
 	// или, в режиме «Всё через WARP», через WARP — но никогда через Tor.
@@ -276,11 +282,6 @@ func (e *Engine) viaFirst(host string) (Upstream, error) {
 		return nil, nil
 	}
 	switch e.route() {
-	case RouteMoscow:
-		// Через разработчика, пока его компьютер (сервер) отвечает; иначе — как в «Авто».
-		if l := e.devLink(); l != nil && l.WaitReady(0) {
-			return l, nil
-		}
 	case RouteTor:
 		if !e.torOn() {
 			return nil, errors.New("Tor не запущен")
@@ -458,6 +459,15 @@ func (e *Engine) connect(host string, port int) (net.Conn, string, error) {
 		e.markBlocked(host, err.Error())
 		return nil, "", err
 	}
+	if u != nil && u.Name() == StratDev {
+		// Через разработчика; не ответил — это соединение идёт как в «Авто».
+		if up, err := e.upDial(u, host, port); err == nil {
+			return up, u.Name(), nil
+		} else {
+			e.logf("%s: через %s не вышло (%s) — как в «Авто»", host, upLabel(u.Name()), shortErr(err))
+		}
+		u = nil
+	}
 	if u != nil {
 		up, err := e.upDial(u, host, port)
 		if err != nil {
@@ -590,6 +600,12 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 			return
 		}
 		_, _ = c.Write([]byte{1, 0})
+		if cl.Exit {
+			if e.Share.OnExit != nil {
+				e.Share.OnExit(c, br)
+			}
+			return
+		}
 		if cc, ok := c.(*countConn); ok {
 			cc.owner.Store(cl)
 		}
@@ -621,6 +637,14 @@ func (e *Engine) handleSOCKS(c net.Conn, br *bufio.Reader) {
 	default:
 		_, _ = c.Write([]byte{5, 7, 0, 1, 0, 0, 0, 0, 0, 0})
 		return
+	}
+	// Раздача с компьютером-выходом: сайты открываются с его IP.
+	if e.Share != nil && e.Share.Exit != nil && !e.Ads.Blocked(host) {
+		if up, err := e.Share.Exit(host, port); err == nil {
+			_, _ = c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
+			e.relay(c, br, host, port, nil, up, StratDev)
+			return
+		}
 	}
 	up, via, err := e.connect(host, port)
 	if err != nil {

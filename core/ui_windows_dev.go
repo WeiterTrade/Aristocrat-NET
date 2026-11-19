@@ -93,6 +93,20 @@ func (u *nativeUI) toggleShare() {
 	}()
 }
 
+// toggleExit — выход в интернет через этот компьютер (для сервера «Ебаной Чукотки»).
+func (u *nativeUI) toggleExit() {
+	on := !u.a.dev.ExitOn()
+	go func() {
+		err := u.a.devSetExit(on)
+		u.mw.Synchronize(func() {
+			if err != nil {
+				walk.MsgBox(u.mw, appTitle, err.Error(), walk.MsgBoxIconWarning)
+			}
+			u.setPane.Invalidate()
+		})
+	}()
+}
+
 // devItems — раздел «Разработчик» на главной странице настроек.
 func (u *nativeUI) devItems(st Settings) []*sItem {
 	if !devBuild {
@@ -104,6 +118,7 @@ func (u *nativeUI) devItems(st Settings) []*sItem {
 	return []*sItem{
 		section("Разработчик"),
 		toggleRow("Раздача интернета", u.a.dev.Status(), u.a.dev.On(), u.toggleShare),
+		toggleRow("Выход в интернет через этот компьютер", u.a.dev.ExitStatus(), u.a.dev.ExitOn(), u.toggleExit),
 		row("Ключ и код подключения", "", "", u.open("devkey")),
 		row("Журнал подключений", "", "", u.open("devlog")),
 		{kind: kRow, title: "Выключить режим разработчика", danger: true, act: func() {
