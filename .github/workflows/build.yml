@@ -130,7 +130,7 @@ jobs:
             -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devDirectCode=$DEVDIRECT" -o ../build/win/Obhod.exe .
           # Сборка разработчика: раздача интернета, пароль — только хэш из секрета DEV_PASSWORD.
           CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags dev -trimpath \
-            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devPassHash=$DEVHASH" -o ../build/win/ObhodDev.exe .
+            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devPassHash=$DEVHASH -X main.devDirectCode=$DEVDIRECT" -o ../build/win/ObhodDev.exe .
       - name: Tor для Windows 7/8 (ветка 13.5)
         run: bash scripts/fetch-tor.sh windows-i686 build/win/tor-legacy "$TOR_LEGACY"
       - name: Tor для Windows 10/11 (актуальный)
@@ -238,7 +238,7 @@ jobs:
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags gui -trimpath \
             -ldflags "-s -w -X main.appVersion=$V -X main.devDirectCode=$DEVDIRECT" -o ../build/linux/obhod .
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags "gui dev" -trimpath \
-            -ldflags "-s -w -X main.appVersion=$V -X main.devPassHash=$DEVHASH" -o ../build/obhod-dev .
+            -ldflags "-s -w -X main.appVersion=$V -X main.devPassHash=$DEVHASH -X main.devDirectCode=$DEVDIRECT" -o ../build/obhod-dev .
       - name: Tor для Linux
         run: bash scripts/fetch-tor.sh linux-x86_64 build/linux/tor
       - name: nfpm
