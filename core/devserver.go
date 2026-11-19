@@ -2,33 +2,36 @@
 
 package main
 
-// Сборка разработчика: раздача интернета через Tor (скрытый сервис) и журнал подключений.
+// Сборка разработчика: раздача интернета («Ебаная Чукотка») и журнал подключений.
 // В пользовательских сборках этого файла нет (см. devserver_stub.go).
 //
-// Как устроено:
-//   • отдельный tor раздачи публикует скрытый сервис (адрес .onion) с авторизацией клиентов:
-//     подключиться могут только приложения с вшитым ключом доступа;
-//   • сначала «открытый» режим (single onion: со стороны разработчика путь в одно звено — быстрее);
-//     если tor так не подключился за 2 минуты (Tor в сети заблокирован) — обычный режим с мостами;
-//   • за адресом — отдельный прокси (обход DPI, блокировка рекламы), вход по логину SOCKS5:
-//     номер установки и сведения о пользователе — для журнала.
+// Как устроено: компьютер с белым IP открывает порт (443, если занят — 8443) с TLS
+// (самоподписанный сертификат, его отпечаток вшит в приложения пользователей) и принимает
+// SOCKS5 с логином: ключ доступа + номер установки, в пароле — сведения для журнала.
+// За ним — тот же обход, что работает на этом компьютере («Авто»).
 
 import (
-	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base32"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -86,14 +89,12 @@ type DevServer struct {
 	a *App
 
 	mu      sync.Mutex
-	on      bool
-	tor     *Tor
-	eng     *Engine
-	mode    string // "single" — открытый режим, "bridges" — с мостами
-	onion   string
 	clients map[string]*devClient
 	journal []string
-	gen     int // поколение запуска (чтобы старый сторож не перезапускал новый tor)
+
+	direct     *Engine // раздача (белый IP, TLS на внешнем порту)
+	directPort int
+	directErr  string
 }
 
 func newDevServer(a *App) *DevServer {
@@ -112,233 +113,23 @@ func (d *DevServer) path(p ...string) string {
 	return filepath.Join(append([]string{d.a.dir}, p...)...)
 }
 
-var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
-
-// ensureClientKey — ключ доступа приложений (x25519): закрытый — в код подключения, открытый — tor раздачи.
-func (d *DevServer) ensureClientKey() (priv, pub string, err error) {
-	if b, err := os.ReadFile(d.path("dev-client.key")); err == nil {
-		if raw, err := b32.DecodeString(strings.TrimSpace(string(b))); err == nil && len(raw) == 32 {
-			k, err := ecdh.X25519().NewPrivateKey(raw)
-			if err == nil {
-				return b32.EncodeToString(raw), b32.EncodeToString(k.PublicKey().Bytes()), nil
-			}
-		}
+// shareEngine — прокси раздачи с тем же обходом, что на этом компьютере («Авто»: обход DPI,
+// при блокировке — WARP или Tor; правила для российских сайтов, реклама), вход — по логину.
+func (d *DevServer) shareEngine(auth *ShareAuth) *Engine {
+	a := d.a
+	eng := NewEngine(a.res, func(string, ...any) {})
+	route := a.settings().Route
+	if route == RouteMoscow || RouteNames[route] == "" {
+		route = RouteAuto
 	}
-	k, err := ecdh.X25519().GenerateKey(rand.Reader)
-	if err != nil {
-		return "", "", err
-	}
-	priv, pub = b32.EncodeToString(k.Bytes()), b32.EncodeToString(k.PublicKey().Bytes())
-	return priv, pub, os.WriteFile(d.path("dev-client.key"), []byte(priv), 0o600)
-}
-
-func (d *DevServer) prepareHS() error {
-	_, pub, err := d.ensureClientKey()
-	if err != nil {
-		return err
-	}
-	ac := d.path("dev-hs", "authorized_clients")
-	if err := os.MkdirAll(ac, 0o700); err != nil {
-		return err
-	}
-	_ = os.Chmod(d.path("dev-hs"), 0o700) // tor требует закрытую папку (Linux)
-	return os.WriteFile(filepath.Join(ac, "app.auth"), []byte("descriptor:x25519:"+pub+"\n"), 0o600)
-}
-
-func (d *DevServer) On() bool {
-	if d == nil {
-		return false
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.on
-}
-
-// Start включает раздачу.
-func (d *DevServer) Start() error {
-	d.mu.Lock()
-	if d.on {
-		d.mu.Unlock()
-		return nil
-	}
-	d.on = true
-	d.gen++
-	gen := d.gen
-	d.mu.Unlock()
-	if err := d.prepareHS(); err != nil {
-		d.Stop()
-		return fmt.Errorf("не удалось подготовить ключи: %w", err)
-	}
-	// Прокси раздачи: обход DPI и блокировка рекламы, вход только по логину.
-	eng := NewEngine(d.a.res, func(string, ...any) {})
-	eng.Route.Store(RouteDPI)
-	eng.Ads = d.a.ads
+	eng.Route.Store(route)
+	eng.Mode.Store(a.settings().Mode)
+	eng.Tor, eng.Warp, eng.Local = a.eng.Tor, a.eng.Warp, a.eng.Local
+	eng.Ads = a.ads
 	eng.BlockQUIC = true
-	eng.Share = &ShareAuth{Check: d.check}
-	port := 0
-	if l, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
-		port = l.Addr().(*net.TCPAddr).Port
-		l.Close()
-	}
-	if err := eng.Start(port); err != nil {
-		d.Stop()
-		return err
-	}
-	d.mu.Lock()
-	d.eng = eng
-	d.mu.Unlock()
-	d.a.logf("Раздача: запускаю…")
-	go d.run(gen, port)
-	return nil
-}
-
-func (d *DevServer) run(gen, port int) {
-	mode := "single"
-	for {
-		d.mu.Lock()
-		if !d.on || d.gen != gen {
-			d.mu.Unlock()
-			return
-		}
-		d.mode = mode
-		d.mu.Unlock()
-		t, err := d.startTor(mode, port)
-		if err != nil {
-			d.a.logf("Раздача: %v", err)
-			time.Sleep(30 * time.Second)
-			continue
-		}
-		d.mu.Lock()
-		d.tor = t
-		d.mu.Unlock()
-		if t.WaitReady(2 * time.Minute) {
-			if b, err := os.ReadFile(d.path("dev-hs", "hostname")); err == nil {
-				d.mu.Lock()
-				d.onion = strings.TrimSpace(string(b))
-				d.mu.Unlock()
-			}
-			if mode == "single" {
-				d.a.logf("Раздача включена (быстрый режим): %s", d.Onion())
-			} else {
-				d.a.logf("Раздача включена (через мосты Tor): %s", d.Onion())
-			}
-			// Сторож: если tor упал — перезапустить.
-			for {
-				time.Sleep(10 * time.Second)
-				d.mu.Lock()
-				alive := d.on && d.gen == gen
-				d.mu.Unlock()
-				if !alive {
-					return
-				}
-				if !t.Enabled() {
-					d.a.logf("Раздача: tor остановился — перезапускаю")
-					break
-				}
-			}
-			continue
-		}
-		t.Stop()
-		if mode == "single" {
-			d.a.logf("Раздача: Tor напрямую не подключился — пробую через мосты")
-			mode = "bridges"
-		} else {
-			d.a.logf("Раздача: Tor не подключился и через мосты — повторю через минуту")
-			mode = "single"
-			time.Sleep(time.Minute)
-		}
-	}
-}
-
-func (d *DevServer) startTor(mode string, port int) (*Tor, error) {
-	paths, err := FindTor()
-	if err != nil {
-		return nil, err
-	}
-	_ = os.MkdirAll(d.path("dev-tor-data"), 0o700)
-	hs := fmt.Sprintf("HiddenServiceDir dev-hs\nHiddenServicePort 443 127.0.0.1:%d\n", port)
-	var torrc string
-	if mode == "single" {
-		torrc = "SOCKSPort 0\nDataDirectory dev-tor-data\nLog notice stdout\nAvoidDiskWrites 1\n" + hs +
-			"HiddenServiceSingleHopMode 1\nHiddenServiceNonAnonymousMode 1\n"
-	} else {
-		st := d.a.settings()
-		ptDir := ""
-		if paths.PTConfig != "" {
-			if err := syncDir(filepath.Dir(paths.PTConfig), d.path("pt")); err == nil {
-				ptDir = "pt"
-			}
-		}
-		bridges := st.Bridges
-		if bridges == "none" {
-			bridges = "auto"
-		}
-		torrc, err = BuildTorrc(TorOptions{Bridges: bridges, Custom: st.CustomBridges, SocksAddr: "0", DataDir: "dev-tor-data",
-			PTConfigPath: paths.PTConfig, PTDir: ptDir, WorkDir: d.a.dir})
-		if err != nil {
-			return nil, err
-		}
-		torrc += hs
-	}
-	if err := os.WriteFile(d.path("dev-torrc"), []byte(torrc), 0o600); err != nil {
-		return nil, err
-	}
-	t := NewTor(func(f string, args ...any) { d.a.logf("Раздача: "+f, args...) })
-	if err := t.Start(paths.Exe, "dev-torrc", paths.LibDir, d.a.dir, "", d.path("dev-tor.pid")); err != nil {
-		return nil, err
-	}
-	return t, nil
-}
-
-// Stop выключает раздачу.
-func (d *DevServer) Stop() {
-	d.mu.Lock()
-	d.on = false
-	d.gen++
-	t, eng := d.tor, d.eng
-	d.tor, d.eng = nil, nil
-	d.mu.Unlock()
-	if t != nil {
-		t.Stop()
-	}
-	if eng != nil {
-		eng.Stop()
-	}
-	d.a.logf("Раздача выключена")
-}
-
-func (d *DevServer) Onion() string {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.onion
-}
-
-// Status — строка состояния для интерфейса.
-func (d *DevServer) Status() string {
-	d.mu.Lock()
-	on, t, mode := d.on, d.tor, d.mode
-	active := 0
-	for _, c := range d.clients {
-		if c.stats.Active.Load() > 0 {
-			active++
-		}
-	}
-	d.mu.Unlock()
-	if !on {
-		return "Выключена"
-	}
-	if t == nil || !t.WaitReady(0) {
-		p := 0
-		if t != nil {
-			_, p, _ = t.Status()
-		}
-		return fmt.Sprintf("Запускается… %d%%", p)
-	}
-	m := "быстрый режим"
-	if mode == "bridges" {
-		m = "через мосты"
-	}
-	return fmt.Sprintf("Работает (%s), подключено: %d", m, active)
+	eng.Share = auth
+	go a.startUpstreams(false) // WARP и Tor для обхода — даже если обход на самом компьютере выключен
+	return eng
 }
 
 // check — вход пользователя в прокси раздачи (логин SOCKS5).
@@ -472,51 +263,31 @@ func humanBytes(n int64) string {
 // Ключ сервера и код подключения
 
 type devKeyFile struct {
-	V          int    `json:"v"`
-	Secret     string `json:"secret"` // hs_ed25519_secret_key (base64)
-	Public     string `json:"public"` // hs_ed25519_public_key (base64)
-	Hostname   string `json:"hostname"`
-	ClientPriv string `json:"client_priv"`
+	V     int    `json:"v"`
+	Cert  string `json:"cert"`  // сертификат TLS (PEM)
+	Key   string `json:"key"`   // его закрытый ключ (PEM)
+	Token string `json:"token"` // ключ доступа приложений
 }
 
-const devKeyPrefix = "ARISTONET-KEY1:"
+const devKeyPrefix = "ARISTONET-KEY2:"
 
-// Code — код подключения для пользовательских сборок (файл dev-code.txt в репозитории).
-func (d *DevServer) Code() (string, error) {
-	host := d.Onion()
-	if host == "" {
-		if b, err := os.ReadFile(d.path("dev-hs", "hostname")); err == nil {
-			host = strings.TrimSpace(string(b))
-		}
-	}
-	if host == "" {
-		return "", errors.New("сначала включите раздачу: адрес появится через минуту-две")
-	}
-	priv, _, err := d.ensureClientKey()
-	if err != nil {
+// ExportKey — ключ сервера одной строкой (резервная копия: сертификат и ключ доступа).
+// После переустановки восстановите его — код подключения останется прежним, пересобирать приложения не придётся.
+func (d *DevServer) ExportKey() (string, error) {
+	if _, _, _, err := d.directIdentity(); err != nil {
 		return "", err
 	}
-	return strings.TrimSuffix(host, ".onion") + ":" + priv, nil
-}
-
-// ExportKey — ключ сервера одной строкой (для резервной копии).
-func (d *DevServer) ExportKey() (string, error) {
-	sec, err1 := os.ReadFile(d.path("dev-hs", "hs_ed25519_secret_key"))
-	pub, err2 := os.ReadFile(d.path("dev-hs", "hs_ed25519_public_key"))
-	host, _ := os.ReadFile(d.path("dev-hs", "hostname"))
-	if err1 != nil || err2 != nil {
+	crt, err1 := os.ReadFile(d.path("dev-direct.crt"))
+	key, err2 := os.ReadFile(d.path("dev-direct.key"))
+	tok, err3 := os.ReadFile(d.path("dev-direct.token"))
+	if err1 != nil || err2 != nil || err3 != nil {
 		return "", errors.New("ключа ещё нет: включите раздачу хотя бы один раз")
 	}
-	priv, _, err := d.ensureClientKey()
-	if err != nil {
-		return "", err
-	}
-	j, _ := json.Marshal(devKeyFile{V: 1, Secret: base64.StdEncoding.EncodeToString(sec), Public: base64.StdEncoding.EncodeToString(pub),
-		Hostname: strings.TrimSpace(string(host)), ClientPriv: priv})
+	j, _ := json.Marshal(devKeyFile{V: 2, Cert: string(crt), Key: string(key), Token: strings.TrimSpace(string(tok))})
 	return devKeyPrefix + base64.RawURLEncoding.EncodeToString(j), nil
 }
 
-// ImportKey восстанавливает ключ сервера (адрес останется прежним — пересобирать приложения не нужно).
+// ImportKey восстанавливает ключ сервера.
 func (d *DevServer) ImportKey(text string) error {
 	text = strings.TrimSpace(text)
 	i := strings.Index(text, devKeyPrefix)
@@ -532,34 +303,22 @@ func (d *DevServer) ImportKey(text string) error {
 		return errors.New("ключ повреждён")
 	}
 	var k devKeyFile
-	if json.Unmarshal(j, &k) != nil || k.Secret == "" || k.ClientPriv == "" {
+	if json.Unmarshal(j, &k) != nil || len(k.Token) != 32 {
 		return errors.New("ключ повреждён")
 	}
-	sec, err1 := base64.StdEncoding.DecodeString(k.Secret)
-	pub, err2 := base64.StdEncoding.DecodeString(k.Public)
-	cp, err3 := b32.DecodeString(k.ClientPriv)
-	if err1 != nil || err2 != nil || err3 != nil || len(cp) != 32 {
+	if _, err := tls.X509KeyPair([]byte(k.Cert), []byte(k.Key)); err != nil {
 		return errors.New("ключ повреждён")
 	}
 	was := d.On()
 	if was {
 		d.Stop()
 	}
-	if err := os.MkdirAll(d.path("dev-hs"), 0o700); err != nil {
-		return err
-	}
-	for name, data := range map[string][]byte{"hs_ed25519_secret_key": sec, "hs_ed25519_public_key": pub, "hostname": []byte(k.Hostname + "\n")} {
-		if err := os.WriteFile(d.path("dev-hs", name), data, 0o600); err != nil {
+	for name, data := range map[string]string{"dev-direct.crt": k.Cert, "dev-direct.key": k.Key, "dev-direct.token": k.Token} {
+		if err := os.WriteFile(d.path(name), []byte(data), 0o600); err != nil {
 			return err
 		}
 	}
-	if err := os.WriteFile(d.path("dev-client.key"), []byte(k.ClientPriv), 0o600); err != nil {
-		return err
-	}
-	d.mu.Lock()
-	d.onion = k.Hostname
-	d.mu.Unlock()
-	d.a.logf("Ключ разработчика восстановлен: %s", k.Hostname)
+	d.a.logf("Ключ сервера восстановлен")
 	if was {
 		return d.Start()
 	}
@@ -639,11 +398,11 @@ func (a *App) devUnlock(pass string) error {
 }
 
 func (a *App) devLock() {
-	if a.dev != nil && a.dev.On() {
+	if a.dev != nil {
 		a.dev.Stop()
 	}
 	a.mu.Lock()
-	a.s.DevMode, a.s.DevShare = false, false
+	a.s.DevMode, a.s.DevDirect = false, false
 	a.mu.Unlock()
 	a.save()
 }
@@ -654,7 +413,7 @@ func (a *App) devSetShare(on bool) error {
 		return errors.New("режим разработчика выключен")
 	}
 	a.mu.Lock()
-	a.s.DevShare = on
+	a.s.DevDirect = on
 	a.mu.Unlock()
 	a.save()
 	if on {
@@ -666,8 +425,7 @@ func (a *App) devSetShare(on bool) error {
 
 func (a *App) devInit() {
 	a.dev = newDevServer(a)
-	st := a.settings()
-	if st.DevMode && st.DevShare {
+	if st := a.settings(); st.DevMode && st.DevDirect {
 		go func() {
 			if err := a.dev.Start(); err != nil {
 				a.logf("Раздача: %v", err)
@@ -677,7 +435,7 @@ func (a *App) devInit() {
 }
 
 func (a *App) devStop() {
-	if a.dev != nil && a.dev.On() {
+	if a.dev != nil {
 		a.dev.Stop()
 	}
 }
@@ -694,4 +452,148 @@ func (a *App) devState() map[string]any {
 		m["clouds"] = CloudDirs()
 	}
 	return m
+}
+
+// ---------------------------------------------------------------------------
+// Раздача: компьютер с белым IP принимает TLS на внешнем порту.
+
+// directIdentity — сертификат TLS (самоподписанный, отпечаток — в коде подключения) и ключ доступа.
+func (d *DevServer) directIdentity() (tls.Certificate, string, string, error) {
+	crt, key, tokPath := d.path("dev-direct.crt"), d.path("dev-direct.key"), d.path("dev-direct.token")
+	cert, err := tls.LoadX509KeyPair(crt, key)
+	if err != nil {
+		pk, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return tls.Certificate{}, "", "", err
+		}
+		sn, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 62))
+		tpl := &x509.Certificate{SerialNumber: sn, Subject: pkix.Name{CommonName: "www.microsoft.com"},
+			NotBefore: time.Now().Add(-24 * time.Hour), NotAfter: time.Now().AddDate(20, 0, 0),
+			KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			DNSNames: []string{"www.microsoft.com"}}
+		der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &pk.PublicKey, pk)
+		if err != nil {
+			return tls.Certificate{}, "", "", err
+		}
+		kb, _ := x509.MarshalECPrivateKey(pk)
+		_ = os.WriteFile(crt, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600)
+		_ = os.WriteFile(key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}), 0o600)
+		if cert, err = tls.LoadX509KeyPair(crt, key); err != nil {
+			return tls.Certificate{}, "", "", err
+		}
+	}
+	sum := sha256.Sum256(cert.Certificate[0])
+	tok := ""
+	if b, err := os.ReadFile(tokPath); err == nil && len(strings.TrimSpace(string(b))) == 32 {
+		tok = strings.TrimSpace(string(b))
+	} else {
+		b := make([]byte, 16)
+		_, _ = rand.Read(b)
+		tok = hex.EncodeToString(b)
+		_ = os.WriteFile(tokPath, []byte(tok), 0o600)
+	}
+	return cert, hex.EncodeToString(sum[:]), tok, nil
+}
+
+func (d *DevServer) On() bool {
+	if d == nil {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.direct != nil
+}
+
+// Start открывает порт раздачи (443; если занят — 8443).
+func (d *DevServer) Start() error {
+	if d.On() {
+		return nil
+	}
+	cert, _, tok, err := d.directIdentity()
+	if err != nil {
+		return fmt.Errorf("не удалось создать сертификат: %w", err)
+	}
+	cfg := &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}}
+	var ln net.Listener
+	port := d.a.settings().DevDirectPort
+	ports := []int{port}
+	if port == 0 {
+		ports = []int{443, 8443}
+	}
+	var lerr error
+	for _, p := range ports {
+		if ln, lerr = tls.Listen("tcp", ":"+strconv.Itoa(p), cfg); lerr == nil {
+			port = p
+			break
+		}
+	}
+	if ln == nil {
+		d.mu.Lock()
+		d.directErr = "порт занят: " + lerr.Error()
+		d.mu.Unlock()
+		return fmt.Errorf("не удалось открыть порт раздачи: %w", lerr)
+	}
+	allowFirewall(port)
+	eng := d.shareEngine(&ShareAuth{Check: func(user, pass string) *ShareClient {
+		if len(user) != 48 || !hmac.Equal([]byte(user[:32]), []byte(tok)) {
+			return nil
+		}
+		return d.check(user[32:], pass)
+	}})
+	eng.Serve(ln)
+	d.mu.Lock()
+	d.direct, d.directPort, d.directErr = eng, port, ""
+	d.mu.Unlock()
+	d.a.logf("Раздача включена: порт %d", port)
+	return nil
+}
+
+func (d *DevServer) Stop() {
+	d.mu.Lock()
+	eng := d.direct
+	d.direct = nil
+	d.mu.Unlock()
+	if eng != nil {
+		eng.Stop()
+		d.a.logf("Раздача выключена")
+	}
+}
+
+// Status — строка состояния.
+func (d *DevServer) Status() string {
+	d.mu.Lock()
+	on, port, derr := d.direct != nil, d.directPort, d.directErr
+	active := 0
+	for _, c := range d.clients {
+		if c.stats.Active.Load() > 0 {
+			active++
+		}
+	}
+	d.mu.Unlock()
+	if !on {
+		if derr != "" {
+			return "Выключена (" + derr + ")"
+		}
+		return "Выключена"
+	}
+	return fmt.Sprintf("Работает: порт %d, подключено: %d", port, active)
+}
+
+// Code — код для секрета GitHub DEV_DIRECT.
+func (d *DevServer) Code() (string, error) {
+	d.mu.Lock()
+	port := d.directPort
+	d.mu.Unlock()
+	if !d.On() {
+		return "", errors.New("сначала включите раздачу")
+	}
+	ip, _, err := publicIP()
+	if err != nil || net.ParseIP(ip) == nil || net.ParseIP(ip).To4() == nil {
+		return "", errors.New("не удалось узнать внешний IP-адрес этого компьютера")
+	}
+	_, fp, tok, err := d.directIdentity()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("d1:%s:%d:%s:%s", ip, port, fp, tok), nil
 }

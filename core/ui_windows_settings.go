@@ -107,11 +107,11 @@ func (u *nativeUI) radioPage(title string, ids []string, names map[string]string
 }
 
 var routeHints = map[string]string{
-	RouteDev:  "Интернет через компьютер разработчика: сайты видят IP Казахстана",
-	RouteAuto: "Сайты напрямую с обходом DPI; заблокированные по IP — через WARP или Tor",
-	RouteDPI:  "Самый быстрый: без смены IP, без WARP и Tor",
-	RouteWarp: "Весь трафик через Cloudflare: другой IP, быстро (страна остаётся вашей)",
-	RouteTor:  "Весь трафик через Tor: IP другой страны, медленнее",
+	RouteMoscow: "Интернет через сервер разработчика с обходом блокировок",
+	RouteAuto:   "Сайты напрямую с обходом DPI; заблокированные по IP — через WARP или Tor",
+	RouteDPI:    "Самый быстрый: без смены IP, без WARP и Tor",
+	RouteWarp:   "Весь трафик через Cloudflare: другой IP, быстро (страна остаётся вашей)",
+	RouteTor:    "Весь трафик через Tor: IP другой страны, медленнее",
 }
 
 var closeNames = map[string]string{"": "Спрашивать", "tray": "Сворачивать в трей", "quit": "Выходить из программы"}
@@ -130,12 +130,15 @@ func (u *nativeUI) buildPage(id string) sPage {
 			func(s *Settings, v string) { s.Route = v })
 		// «Через разработчика» — сначала предупреждение, что разработчик увидит сведения об устройстве.
 		for _, it := range p.items {
-			if it.radio && it.title == RouteNames[RouteDev] && st.Route != RouteDev {
-				it.act = func() {
-					u.confirmDevRoute(func() {
-						u.apply(func(s *Settings) { s.Route = RouteDev })
-						u.goBack()
-					})
+			for _, r := range []string{RouteMoscow} {
+				r := r
+				if it.radio && RouteNames[r] != "" && it.title == RouteNames[r] && st.Route != r {
+					it.act = func() {
+						u.confirmDevRoute(func() {
+							u.apply(func(s *Settings) { s.Route = r })
+							u.goBack()
+						})
+					}
 				}
 			}
 		}
@@ -356,7 +359,7 @@ func (u *nativeUI) buildPage(id string) sPage {
 }
 
 func shortRoute(r string) string {
-	return map[string]string{RouteAuto: "Авто", RouteDPI: "Только DPI", RouteWarp: "WARP", RouteTor: "Tor", RouteDev: "Разработчик"}[r]
+	return map[string]string{RouteAuto: "Авто", RouteDPI: "Только DPI", RouteWarp: "WARP", RouteTor: "Tor", RouteMoscow: "Сервер"}[r]
 }
 
 func bridgeCount(custom string) string {

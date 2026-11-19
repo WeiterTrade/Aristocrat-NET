@@ -114,13 +114,6 @@ func (u *nativeUI) devItems(st Settings) []*sItem {
 	}
 }
 
-func shortCode(c string) string {
-	if len(c) < 30 {
-		return c
-	}
-	return c[:14] + "…" + c[len(c)-8:]
-}
-
 // devPage — страницы раздела разработчика (nil — не страница раздела).
 func (u *nativeUI) devPage(id string) *sPage {
 	if !devBuild {
@@ -129,30 +122,30 @@ func (u *nativeUI) devPage(id string) *sPage {
 	switch id {
 	case "devlogin":
 		return &sPage{title: "Режим разработчика", parent: "root", items: []*sItem{
-			{kind: kText, title: "Введите пароль разработчика. После входа появятся раздача интернета через Tor, ключ сервера и журнал подключений."},
+			{kind: kText, title: "Введите пароль разработчика. После входа появятся раздача интернета, ключ сервера и журнал подключений."},
 			{kind: kNative, native: u.lePass, h: 30},
 			{kind: kButtons, btns: []*sBtn{{label: "Включить", primary: true, act: u.devLogin}}},
 		}}
 	case "devkey":
-		code, err := u.a.dev.Code()
-		codeText := "Код подключения: " + shortCode(code)
-		if err != nil {
-			codeText = err.Error()
-		}
 		return &sPage{title: "Ключ и код подключения", parent: "root", items: []*sItem{
 			section("Код подключения"),
-			{kind: kText, title: codeText + ". Вставьте его в файл dev-code.txt в репозитории на GitHub — " +
-				"пользовательские сборки получат режим «Через разработчика»."},
+			{kind: kText, title: "Включите раздачу, скопируйте код и вставьте его в секрет GitHub DEV_DIRECT — " +
+				"в пользовательских сборках появится маршрут «Ебаная Чукотка». Нужен белый IP и открытый порт 443 (или 8443)."},
 			{kind: kButtons, btns: []*sBtn{{label: "Копировать код подключения", primary: true, act: func() {
-				if c, err := u.a.dev.Code(); err != nil {
-					walk.MsgBox(u.mw, appTitle, err.Error(), walk.MsgBoxIconInformation)
-				} else if walk.Clipboard().SetText(c) == nil {
-					u.showToast("Код подключения скопирован")
-				}
+				go func() {
+					c, err := u.a.dev.Code()
+					u.mw.Synchronize(func() {
+						if err != nil {
+							walk.MsgBox(u.mw, appTitle, err.Error(), walk.MsgBoxIconInformation)
+						} else if walk.Clipboard().SetText(c) == nil {
+							u.showToast("Код скопирован — вставьте его в секрет DEV_DIRECT")
+						}
+					})
+				}()
 			}}}},
 			section("Ключ сервера"),
-			{kind: kText, title: "Ключ — это адрес вашего компьютера в Tor. Сохраните копию: после переустановки Windows " +
-				"восстановите ключ, и адрес останется прежним — пересобирать приложения не придётся. Никому его не передавайте."},
+			{kind: kText, title: "Ключ — сертификат сервера и ключ доступа. Сохраните копию: после переустановки Windows " +
+				"восстановите ключ, и код подключения останется прежним — пересобирать приложения не придётся. Никому его не передавайте."},
 			{kind: kButtons, btns: []*sBtn{
 				{label: "Копировать ключ", act: u.devCopyKey},
 				{label: "Сохранить в файл", act: u.devSaveFile},
@@ -285,7 +278,7 @@ func (u *nativeUI) devOpenFile() {
 // confirmDevRoute — предупреждение перед выбором режима «Через разработчика».
 func (u *nativeUI) confirmDevRoute(apply func()) {
 	p := &popup{u: u, dialog: true, title: "Подключиться через разработчика?",
-		text: "Интернет пойдёт через компьютер разработчика в Казахстане: сайты увидят казахстанский IP. " +
+		text: "Интернет пойдёт через сервер разработчика: сайты увидят его IP. " +
 			"Разработчик увидит имя вашего устройства, ваш IP-адрес, город и страну, версию приложения и объём трафика."}
 	p.items = []*popItem{
 		{label: "Отмена", button: true},

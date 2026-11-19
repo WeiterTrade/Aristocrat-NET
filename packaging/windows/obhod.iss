@@ -15,7 +15,7 @@
   #define SRC "..\..\build\win"
 #endif
 #define ASSETS "..\..\assets"
-; /DDEV=1 — установщик сборки разработчика (раздача через Tor); ставится только на компьютер разработчика.
+; /DDEV=1 — установщик сборки разработчика (раздача интернета); ставится только на компьютер разработчика.
 #ifdef DEV
   #define SETUPNAME "AristocratNET-Dev-Setup"
   #define VERNAME "Aristocrat NET " + VERSION + " (разработчик)"
@@ -76,6 +76,11 @@ Name: "{autoprograms}\Aristocrat NET"; Filename: "{app}\Obhod.exe"; IconFilename
 Name: "{autodesktop}\Aristocrat NET"; Filename: "{app}\Obhod.exe"; IconFilename: "{app}\obhod.ico"; Tasks: desktopicon
 
 [Run]
+#ifdef DEV
+; Сборка разработчика: входящие подключения к раздаче напрямую (белый IP) — разрешить в брандмауэре.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Aristocrat NET (раздача)"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Aristocrat NET (раздача)"" dir=in action=allow program=""{app}\Obhod.exe"" enable=yes profile=any"; Flags: runhidden
+#endif
 Filename: "{app}\Obhod.exe"; Description: "Запустить Aristocrat NET"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]

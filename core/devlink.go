@@ -1,12 +1,8 @@
 package main
 
-// «Через разработчика»: трафик пользователя выходит в интернет через компьютер разработчика
-// (в Казахстане). Компьютер разработчика — скрытый сервис Tor (адрес .onion), поэтому ему
-// не нужен белый IP. Адрес и ключ доступа (код подключения) вшиваются в пользовательские
-// сборки при сборке на GitHub (файл dev-code.txt → -X main.devCode=…).
-//
-// Подключение: Tor пользователя (с мостами) → адрес .onion → прокси SOCKS5 на компьютере
-// разработчика. В логине SOCKS5 приложение сообщает о себе: номер установки, имя устройства,
+// Общая часть маршрута «через разработчика» («Ебаная Чукотка», см. devdirect.go):
+// трафик пользователя выходит в интернет через компьютер разработчика с белым IP.
+// В логине SOCKS5 приложение сообщает о себе: номер установки, имя устройства,
 // свой IP, страну и город, версию — разработчик видит это в журнале (пользователь
 // предупреждается при выборе режима).
 
@@ -26,57 +22,17 @@ import (
 	"time"
 )
 
-// devCode — код подключения «адрес-onion-без-.onion:ключ-x25519-base32» (задаётся при сборке).
-var devCode = ""
-
-const (
-	RouteDev = "dev" // всё через компьютер разработчика
-	StratDev = "dev"
-)
-
-func init() {
-	if devAvailable() {
-		RouteNames[RouteDev] = "Эдик на Чукотке"
-	}
-}
-
-// devAvailable — в этой сборке есть код подключения к разработчику.
-func devAvailable() bool {
-	_, _, ok := parseDevCode(devCode)
-	return ok
-}
-
-func parseDevCode(code string) (onion, key string, ok bool) {
-	code = strings.TrimSpace(code)
-	onion, key, ok = strings.Cut(code, ":")
-	onion = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(onion)), ".onion")
-	key = strings.ToUpper(strings.TrimSpace(key))
-	return onion, key, ok && len(onion) == 56 && len(key) == 52
-}
-
-// writeDevClientAuth — ключ доступа для Tor пользователя (ClientOnionAuthDir).
-// Возвращает папку для torrc ("" — кода нет).
-func writeDevClientAuth(dir string) string {
-	onion, key, ok := parseDevCode(devCode)
-	if !ok {
-		return ""
-	}
-	_ = os.MkdirAll(dir, 0o700)
-	line := fmt.Sprintf("%s:descriptor:x25519:%s\n", onion, key)
-	if os.WriteFile(filepath.Join(dir, "aristocrat.auth_private"), []byte(line), 0o600) != nil {
-		return ""
-	}
-	return dir
-}
+const StratDev = "dev"
 
 // DevLink — путь «через разработчика» (Upstream для движка).
 type DevLink struct {
-	Tor  *Tor
 	Info func() string // сведения о себе для журнала разработчика
 
-	onion string
-	id    string // номер установки (постоянный)
-	logf  func(string, ...any)
+	id     string // номер установки (постоянный)
+	logf   func(string, ...any)
+	label  string                                      // для журнала
+	prefix string                                      // начало логина (ключ доступа)
+	dialTo func(ctx context.Context) (net.Conn, error) // TLS до прокси раздачи
 
 	mu      sync.Mutex
 	lastErr string // причина последней неудачи (для журнала)
@@ -85,28 +41,23 @@ type DevLink struct {
 	running bool
 }
 
-func NewDevLink(t *Tor, dir string, logf func(string, ...any)) *DevLink {
-	onion, _, ok := parseDevCode(devCode)
-	if !ok {
-		return nil
-	}
-	d := &DevLink{Tor: t, onion: onion + ".onion", logf: logf}
+// installID — постоянный номер установки (для журнала разработчика).
+func installID(dir string) string {
 	p := filepath.Join(dir, "install-id")
 	if b, err := os.ReadFile(p); err == nil && len(strings.TrimSpace(string(b))) == 16 {
-		d.id = strings.TrimSpace(string(b))
-	} else {
-		b := make([]byte, 8)
-		_, _ = rand.Read(b)
-		d.id = hex.EncodeToString(b)
-		_ = os.MkdirAll(dir, 0o700)
-		_ = os.WriteFile(p, []byte(d.id), 0o600)
+		return strings.TrimSpace(string(b))
 	}
-	return d
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	id := hex.EncodeToString(b)
+	_ = os.MkdirAll(dir, 0o700)
+	_ = os.WriteFile(p, []byte(id), 0o600)
+	return id
 }
 
 func (d *DevLink) Name() string { return StratDev }
 
-func (d *DevLink) Enabled() bool { return d != nil && d.Tor != nil && d.Tor.Enabled() }
+func (d *DevLink) Enabled() bool { return d != nil && d.dialTo != nil }
 
 // State — для интерфейса: "connecting" | "ready" | "down" | "".
 func (d *DevLink) State() string {
@@ -158,12 +109,12 @@ func (d *DevLink) Watch(active func() bool) {
 			if st != last {
 				switch st {
 				case "ready":
-					d.logf("Разработчик на связи — трафик идёт через его компьютер")
+					d.logf("На связи %s — трафик идёт через него", d.label)
 				case "down":
 					d.mu.Lock()
 					why := d.lastErr
 					d.mu.Unlock()
-					d.logf("Компьютер разработчика сейчас недоступен (%s) — работает обычный режим", why)
+					d.logf("Сейчас недоступен %s (%s) — работает обычный режим", d.label, why)
 				}
 				last = st
 			}
@@ -183,20 +134,10 @@ func (d *DevLink) probe() string {
 	first := d.state == ""
 	d.mu.Unlock()
 	if first {
-		d.logf("Подключаюсь к компьютеру разработчика (%s…) — первый раз это занимает до минуты", d.onion[:8])
-	}
-	if !d.Tor.WaitReady(0) {
-		d.mu.Lock()
-		if d.state == "" {
-			d.state = "connecting"
-		}
-		d.mu.Unlock()
-		if !d.Tor.WaitReady(90 * time.Second) {
-			return "connecting"
-		}
+		d.logf("Подключаюсь: %s", d.label)
 	}
 	for i := 0; i < 2; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		c, err := d.dialSOCKS(ctx, devPingHost, 1)
 		cancel()
 		if err == nil {
@@ -216,11 +157,11 @@ func (d *DevLink) Dial(ctx context.Context, host string, port int) (net.Conn, er
 	return d.dialSOCKS(ctx, host, port)
 }
 
-// dialSOCKS: Tor → адрес разработчика → SOCKS5 с логином (сведения о себе) → CONNECT host:port.
+// dialSOCKS: TLS до сервера раздачи → SOCKS5 с логином → CONNECT host:port.
 func (d *DevLink) dialSOCKS(ctx context.Context, host string, port int) (net.Conn, error) {
-	c, err := d.Tor.Dial(ctx, d.onion, 443)
+	c, err := d.dialTo(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("разработчик недоступен: %w", err)
+		return nil, fmt.Errorf("недоступен %s: %w", d.label, err)
 	}
 	if dl, ok := ctx.Deadline(); ok {
 		_ = c.SetDeadline(dl)
@@ -233,7 +174,7 @@ func (d *DevLink) dialSOCKS(ctx context.Context, host string, port int) (net.Con
 	if _, err := io.ReadFull(c, r); err != nil || r[1] != 2 {
 		return fail(errors.New("разработчик: неверный ответ"))
 	}
-	user, pass := d.id, ""
+	user, pass := d.prefix+d.id, ""
 	if d.Info != nil {
 		pass = d.Info()
 	}

@@ -27,7 +27,7 @@ type Engine struct {
 	Warp      *Warp
 	Local     *Local        // российские и казахстанские сайты — напрямую; Spotify в России — через Tor
 	Ads       *AdBlock      // блокировка рекламы (nil — выключена)
-	Dev       *DevLink      // «через разработчика» (nil — в сборке нет кода подключения)
+	Direct    *DevLink      // через сервер разработчика с белым IP (nil — нет кода)
 	Share     *ShareAuth    // раздача (сборка разработчика): вход по логину SOCKS5, учёт клиентов
 	names     dnsNames      // адрес → имя сайта (по ответам нашего DNS, см. dnsserver.go)
 	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
@@ -131,6 +131,22 @@ func (e *Engine) Start(port int) error {
 	return nil
 }
 
+// Serve — принимать соединения с готового слушателя (раздача напрямую: TLS на внешнем порту).
+func (e *Engine) Serve(ln net.Listener) {
+	e.mu.Lock()
+	e.ln = ln
+	e.mu.Unlock()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go e.handle(c)
+		}
+	}()
+}
+
 func (e *Engine) Stop() {
 	e.mu.Lock()
 	ln := e.ln
@@ -148,7 +164,7 @@ const (
 	RouteDPI  = "dpi"  // только обход DPI
 	RouteTor  = "tor"  // всё через Tor
 	RouteWarp = "warp" // всё через Cloudflare WARP (другой IP)
-	// RouteDev — всё через компьютер разработчика (см. devlink.go)
+	// RouteMoscow — всё через сервер разработчика (см. devdirect.go)
 )
 
 var RouteNames = map[string]string{
@@ -183,9 +199,9 @@ func (e *Engine) upstreams() []Upstream {
 	var out []Upstream
 	switch e.route() {
 	case RouteDPI:
-	case RouteDev:
-		if e.Dev != nil && e.Dev.WaitReady(0) {
-			out = append(out, e.Dev)
+	case RouteMoscow:
+		if l := e.devLink(); l != nil && l.WaitReady(0) {
+			out = append(out, l)
 		}
 		if e.warpOn() {
 			out = append(out, e.Warp)
@@ -212,14 +228,22 @@ func (e *Engine) upstreams() []Upstream {
 	return out
 }
 
+// devLink — путь режима «через разработчика» для текущего маршрута.
+func (e *Engine) devLink() *DevLink {
+	if e.route() == RouteMoscow {
+		return e.Direct
+	}
+	return nil
+}
+
 func (e *Engine) upstreamByName(name string) Upstream {
 	switch {
 	case name == StratTor && e.torOn():
 		return e.Tor
 	case name == StratWarp && e.warpOn():
 		return e.Warp
-	case name == StratDev && e.Dev != nil && e.Dev.WaitReady(0):
-		return e.Dev
+	case name == StratDev && e.devLink() != nil && e.devLink().WaitReady(0):
+		return e.devLink()
 	}
 	return nil
 }
@@ -252,10 +276,10 @@ func (e *Engine) viaFirst(host string) (Upstream, error) {
 		return nil, nil
 	}
 	switch e.route() {
-	case RouteDev:
-		// Через разработчика, пока его компьютер отвечает; иначе — как в «Авто».
-		if e.Dev != nil && e.Dev.WaitReady(0) {
-			return e.Dev, nil
+	case RouteMoscow:
+		// Через разработчика, пока его компьютер (сервер) отвечает; иначе — как в «Авто».
+		if l := e.devLink(); l != nil && l.WaitReady(0) {
+			return l, nil
 		}
 	case RouteTor:
 		if !e.torOn() {

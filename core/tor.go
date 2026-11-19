@@ -73,8 +73,6 @@ type TorOptions struct {
 	// AutoPhase — этап автовыбора мостов: 0 — snowflake и свои мосты (лучше всего проходят
 	// блокировки в России и Казахстане), 1 — запасной: obfs4, meek и свои мосты.
 	AutoPhase int
-	// ClientAuthDir — папка с ключом доступа к скрытому сервису разработчика ("" — нет).
-	ClientAuthDir string
 }
 
 // TorCountries — страны выхода из Tor, которые можно выбрать (в них много выходных узлов).
@@ -116,9 +114,6 @@ func BuildTorrc(o TorOptions) (string, error) {
 	w("MaxCircuitDirtiness 900")
 	w("ReducedConnectionPadding 1")
 	w("KeepalivePeriod 60")
-	if o.ClientAuthDir != "" {
-		w("ClientOnionAuthDir %s", o.ClientAuthDir)
-	}
 	if o.ForAndroid && o.LogFile != "" {
 		w("Log notice file %s", o.LogFile)
 	}
@@ -697,7 +692,7 @@ var socksErrors = map[byte]string{
 	1: "ошибка Tor", 2: "запрещено", 3: "сеть недоступна", 4: "узел недоступен",
 	5: "соединение отклонено", 6: "истекло время (TTL)", 7: "команда не поддерживается", 8: "тип адреса не поддерживается",
 	// скрытые сервисы (.onion), с флагом ExtendedErrors
-	0xF0: "адрес .onion не найден в сети Tor (компьютер разработчика выключен или раздача ещё не опубликована)",
+	0xF0: "адрес .onion не найден в сети Tor (сайт выключен)",
 	0xF1: "описание адреса .onion повреждено", 0xF2: "не удалось подключиться к точке входа адреса .onion",
 	0xF3: "не удалось встретиться с адресом .onion", 0xF4: "нет ключа доступа к адресу .onion (код подключения)",
 	0xF5: "неверный ключ доступа к адресу .onion (код подключения устарел)", 0xF6: "неверный адрес .onion",
