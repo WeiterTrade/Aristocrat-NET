@@ -115,20 +115,20 @@ jobs:
           END
           RC
           i686-w64-mingw32-windres -O coff -i obhod.rc -o rsrc_windows_386.syso
-      - name: Код подключения и пароль разработчика (секреты DEV_CODE и DEV_PASSWORD)
+      - name: Код подключения и пароль разработчика (секреты DEV_DIRECT и DEV_PASSWORD)
         env:
-          DEV_CODE: ${{ secrets.DEV_CODE }}
+          DEV_DIRECT: ${{ secrets.DEV_DIRECT }}
           DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
         run: |
-          echo "DEVCODE=$(bash scripts/dev-code.sh)" >> "$GITHUB_ENV"
+          echo "DEVDIRECT=$(bash scripts/dev-direct.sh)" >> "$GITHUB_ENV"
           echo "DEVHASH=$(cd core && go run ./tools/devhash)" >> "$GITHUB_ENV"
           [ -n "$DEV_PASSWORD" ] || echo "::warning::Секрет DEV_PASSWORD не задан — в сборке разработчика режим не откроется"
       - name: Сборка Obhod.exe (x86, работает на Windows 7–11 x86/x64)
         working-directory: core
         run: |
           CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -trimpath \
-            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devCode=$DEVCODE" -o ../build/win/Obhod.exe .
-          # Сборка разработчика: раздача через Tor, пароль — только хэш из секрета DEV_PASSWORD.
+            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devDirectCode=$DEVDIRECT" -o ../build/win/Obhod.exe .
+          # Сборка разработчика: раздача интернета, пароль — только хэш из секрета DEV_PASSWORD.
           CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags dev -trimpath \
             -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devPassHash=$DEVHASH" -o ../build/win/ObhodDev.exe .
       - name: Tor для Windows 7/8 (ветка 13.5)
@@ -225,18 +225,18 @@ jobs:
           go mod download
       - name: Библиотеки окна (GTK3, WebKitGTK 4.1)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
-      - name: Код подключения и пароль разработчика (секреты DEV_CODE и DEV_PASSWORD)
+      - name: Код подключения и пароль разработчика (секреты DEV_DIRECT и DEV_PASSWORD)
         env:
-          DEV_CODE: ${{ secrets.DEV_CODE }}
+          DEV_DIRECT: ${{ secrets.DEV_DIRECT }}
           DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
         run: |
-          echo "DEVCODE=$(bash scripts/dev-code.sh)" >> "$GITHUB_ENV"
+          echo "DEVDIRECT=$(bash scripts/dev-direct.sh)" >> "$GITHUB_ENV"
           echo "DEVHASH=$(cd core && go run ./tools/devhash)" >> "$GITHUB_ENV"
       - name: Сборка obhod (linux/amd64, нативное окно + трей)
         working-directory: core
         run: |
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags gui -trimpath \
-            -ldflags "-s -w -X main.appVersion=$V -X main.devCode=$DEVCODE" -o ../build/linux/obhod .
+            -ldflags "-s -w -X main.appVersion=$V -X main.devDirectCode=$DEVDIRECT" -o ../build/linux/obhod .
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags "gui dev" -trimpath \
             -ldflags "-s -w -X main.appVersion=$V -X main.devPassHash=$DEVHASH" -o ../build/obhod-dev .
       - name: Tor для Linux
@@ -306,14 +306,11 @@ jobs:
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           [ -d "$ANDROID_HOME/ndk/$NDKV" ] || (yes | "$SDKM" --install "ndk;$NDKV" > /dev/null)
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDKV" >> "$GITHUB_ENV"
-      - name: Код подключения к разработчику (секрет DEV_CODE)
+      - name: Код подключения к разработчику (секрет DEV_DIRECT)
         env:
-          DEV_CODE: ${{ secrets.DEV_CODE }}
+          DEV_DIRECT: ${{ secrets.DEV_DIRECT }}
         run: |
-          DC=$(bash scripts/dev-code.sh)
-          echo "DEVCODE=$DC" >> "$GITHUB_ENV"
-          # Приложение видит файл и показывает «Через разработчика»; сам код вшивается в ядро.
-          if [ -n "$DC" ]; then printf '%s\n' "$DC" > dev-code.txt; fi
+          echo "DEVDIRECT=$(bash scripts/dev-direct.sh)" >> "$GITHUB_ENV"
       - name: Нативные части (ядро, lyrebird, hev-socks5-tunnel)
         run: bash scripts/build-android-natives.sh "$V"
       - name: Ключ подписи (если задан в секретах)
