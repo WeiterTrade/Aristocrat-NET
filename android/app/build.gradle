@@ -6,13 +6,6 @@ plugins {
 def appVersion = project.findProperty('appVersion') ?: '0.3.0'
 def appVersionCode = (project.findProperty('appVersionCode') ?: '1').toInteger()
 
-// Код подключения к компьютеру разработчика (файл dev-code.txt в корне репозитория).
-// Есть код — в «Режиме работы» появляется «Через разработчика»; сам код вшивается в ядро (libobhod.so).
-def devCodeFile = rootProject.file('../dev-code.txt')
-def devAvailable = devCodeFile.exists() && devCodeFile.readLines('UTF-8').any { l ->
-    l.trim() ==~ /[a-z2-7]{56}(\.onion)?:[A-Z2-7]{52}/
-}
-
 // Подпись: если в CI заданы секреты — release-ключом, иначе debug-ключом (APK всё равно устанавливается).
 def ksFile = System.getenv('ANDROID_KEYSTORE_FILE')
 def hasReleaseKey = ksFile != null && file(ksFile).exists()
@@ -28,7 +21,6 @@ android {
         targetSdk 34
         versionCode appVersionCode
         versionName appVersion
-        buildConfigField 'boolean', 'DEV_AVAILABLE', devAvailable ? 'true' : 'false'
         // Архитектуры задаются в splits ниже (abiFilters здесь вызвал бы конфликт).
     }
 

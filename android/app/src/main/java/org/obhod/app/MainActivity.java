@@ -99,8 +99,9 @@ public class MainActivity extends Activity {
             ver = " " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
         }
-        String text = getString(R.string.about_text) + "\n\nРежим «Через разработчика»: "
-                + (Prefs.devAvailable(this) ? "есть в этой сборке" : "нет в этой сборке (не задан код подключения)");
+        java.util.Set<String> dr = Prefs.devRoutes(this);
+        String text = getString(R.string.about_text)
+                + "\n\n«" + getString(R.string.route_moscow) + "»: " + (dr.contains("moscow") ? "есть в этой сборке" : "нет (не задан код DEV_DIRECT)");
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_name) + ver)
                 .setMessage(text)

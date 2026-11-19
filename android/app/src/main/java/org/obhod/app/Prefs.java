@@ -43,7 +43,10 @@ final class Prefs {
         return c.getSharedPreferences("obhod", Context.MODE_PRIVATE);
     }
 
-    static String route(Context c) { return get(c).getString("route", "auto"); }
+    static String route(Context c) {
+        String r = get(c).getString("route", "auto");
+        return "dev".equals(r) ? "auto" : r; // прежний режим «Эдик на Чукотке» убран
+    }
 
     /** Запасной путь в режиме «Авто»: warp-tor | warp | tor. */
     static String heavy(Context c) { return get(c).getString("heavy", "warp-tor"); }
@@ -55,33 +58,39 @@ final class Prefs {
 
     static String custom(Context c) { return get(c).getString("custom", ""); }
 
-    private static Boolean devAvailable;
+    private static java.util.Set<String> devRoutes;
 
     /**
-     * Есть ли в сборке код подключения к разработчику. Проверяется у самого ядра (код вшит в libobhod.so),
-     * а признак из сборки (BuildConfig) — запасной.
+     * Режимы «через разработчика», которые есть в этой сборке: "moscow" (Ебаная Чукотка, сервер с белым IP).
+     * Спрашивается у самого ядра — код вшит в libobhod.so.
      */
-    static synchronized boolean devAvailable(Context c) {
-        if (devAvailable != null) return devAvailable;
-        boolean ok = BuildConfig.DEV_AVAILABLE;
+    static synchronized java.util.Set<String> devRoutes(Context c) {
+        if (devRoutes != null) return devRoutes;
+        java.util.Set<String> out = new java.util.HashSet<>();
         try {
             java.io.File core = new java.io.File(c.getApplicationInfo().nativeLibraryDir, "libobhod.so");
             Process p = new ProcessBuilder(core.getAbsolutePath(), "-dev-available").redirectErrorStream(true).start();
-            byte[] buf = new byte[16];
+            byte[] buf = new byte[64];
             int n = p.getInputStream().read(buf);
             p.waitFor();
-            if (n > 0 && new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8).trim().equals("yes")) ok = true;
+            if (n > 0) {
+                for (String t : new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8).trim().split("\\s+")) {
+                    if (t.equals("moscow")) out.add(t);
+                }
+            }
         } catch (Exception ignored) {
         }
-        devAvailable = ok;
-        return ok;
+        devRoutes = out;
+        return out;
     }
+
+    static boolean devAvailable(Context c) { return !devRoutes(c).isEmpty(); }
 
     /** Нужен ли Tor при текущих настройках. */
     static boolean needTor(Context c) {
         String r = route(c);
-        if ("tor".equals(r) || "dev".equals(r)) return true; // к разработчику — через Tor
-        if (!"auto".equals(r)) return false;
+        if ("tor".equals(r)) return true;
+        if (!"auto".equals(r) && !"moscow".equals(r)) return false; // «moscow»: запасной путь — как в «Авто»
         return !"warp".equals(heavy(c));
     }
 

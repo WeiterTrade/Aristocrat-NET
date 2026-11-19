@@ -65,12 +65,14 @@ public class SettingsActivity extends Activity {
         findViewById(R.id.openLog).setOnClickListener(v -> startActivity(new Intent(this, LogActivity.class)));
         torLine = findViewById(R.id.torLine);
         routeValues = getResources().getStringArray(R.array.route_values);
-        // «Через разработчика» — только в сборках с кодом подключения (dev-code.txt).
+        // «Ебаная Чукотка» — только в сборках с кодом подключения (секрет DEV_DIRECT).
         if (Prefs.devAvailable(this)) {
             List<String> names = new ArrayList<>(Arrays.asList(getResources().getStringArray(R.array.route_names)));
             List<String> values = new ArrayList<>(Arrays.asList(routeValues));
-            names.add(getString(R.string.route_dev));
-            values.add("dev");
+            if (Prefs.devRoutes(this).contains("moscow")) {
+                names.add(getString(R.string.route_moscow));
+                values.add("moscow");
+            }
             routeValues = values.toArray(new String[0]);
             android.widget.ArrayAdapter<String> ad = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_item, names);
             ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -89,12 +91,12 @@ public class SettingsActivity extends Activity {
         route.setOnItemSelectedListener(new Picked() {
             @Override void picked(int pos) {
                 String v = routeValues[pos];
-                if ("dev".equals(v) && !"dev".equals(Prefs.route(SettingsActivity.this))) {
+                if ("moscow".equals(v) && !v.equals(Prefs.route(SettingsActivity.this))) {
                     // Предупреждение: разработчик увидит сведения об устройстве.
                     new AlertDialog.Builder(SettingsActivity.this)
                             .setTitle(R.string.dev_warn_title)
                             .setMessage(R.string.dev_warn_text)
-                            .setPositiveButton(R.string.dev_warn_ok, (d, w) -> save("route", "dev"))
+                            .setPositiveButton(R.string.dev_warn_ok, (d, w) -> save("route", v))
                             .setNegativeButton(R.string.recv_cancel, (d, w) ->
                                     route.setSelection(Math.max(0, Arrays.asList(routeValues).indexOf(Prefs.route(SettingsActivity.this)))))
                             .setOnCancelListener(d ->
