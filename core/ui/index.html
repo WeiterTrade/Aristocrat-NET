@@ -132,7 +132,7 @@
   <div class="state" id="state">Выключено</div>
   <div class="sub" id="sub"></div>
   <div class="ip" id="ip">Ваш IP: <b>…</b></div>
-  <div class="lanrow"><button class="lanbtn" id="shareBtn">Раздать интернет</button><button class="lanbtn" id="recvBtn">Интернет с телефона</button></div>
+  <div class="lanrow"><button class="lanbtn" id="shareBtn">Раздать интернет</button><button class="lanbtn" id="recvBtn">Подключиться к раздаче</button></div>
   <div class="err" id="err"></div>
   <button class="gear" id="gear" title="Настройки" aria-label="Настройки">⚙</button>
   <button class="gear ant hidden" id="ant" title="Раздача интернета" aria-label="Раздача интернета"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="10" r="1.6" fill="currentColor"/><path d="M12 11.6V20"/><path d="M8.5 6.5a5 5 0 0 0 0 7M15.5 6.5a5 5 0 0 1 0 7M5.6 3.8a9 9 0 0 0 0 12.4M18.4 3.8a9 9 0 0 1 0 12.4"/></svg></button>
@@ -157,7 +157,7 @@
 <div class="modal hidden" id="shareAsk">
   <div class="card">
     <h3 style="margin:0 0 8px;color:var(--goldl)">Раздать интернет с компьютера</h3>
-    <p>Устройства вашей сети (Wi-Fi роутера или точки доступа этого компьютера) получат интернет через него. На них: Aristocrat NET → «Интернет с телефона» или прокси <b id="shareAddr"></b>, порт 8282.</p>
+    <p>Устройства вашей сети (Wi-Fi роутера или точки доступа этого компьютера) получат интернет через него. На них: Aristocrat NET → «Подключиться к раздаче» или прокси <b id="shareAddr"></b>, порт 8282.</p>
     <div class="btns" style="justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" id="shareCancel">Отмена</button><button class="btn ghost" id="sharePlain">Без обхода</button><button class="btn" id="shareBypass">С обходом блокировок</button></div>
   </div>
 </div>
@@ -216,7 +216,7 @@ function renderHome(s) {
   $('shareBtn').className = 'lanbtn' + (L.share ? ' on' : '');
   $('shareBtn').textContent = L.share ? (L.bypass ? '● Раздача с обходом' : '● Раздача включена') : 'Раздать интернет';
   $('recvBtn').className = 'lanbtn' + (L.recv ? ' on' : '');
-  $('recvBtn').textContent = recvBusy ? 'Ищу телефон…' : L.recv ? '● Интернет с телефона' : 'Интернет с телефона';
+  $('recvBtn').textContent = recvBusy ? 'Ищу раздачу…' : L.recv ? '● Подключено к раздаче' : 'Подключиться к раздаче';
   $('ver').textContent = 'v' + s.version;
   $('aboutVer').textContent = 'версия ' + s.version;
   if (lastOn !== s.on) { lastOn = s.on; loadIP(); }
@@ -422,8 +422,8 @@ function lanSection(s) {
   const addrs = (L.addrs || []).join(', ');
   const rows = [row({ t: 'Раздать интернет', s: L.share ? (addrs ? 'Адрес: ' + addrs + ', порт ' + L.port : 'Компьютер не подключён к сети — подключите его к Wi-Fi или включите точку доступа') : 'Устройства вашей сети получат интернет через этот компьютер', toggle: !!L.share, a: 'lanshare' })];
   if (L.share) rows.push(row({ t: 'Раздавать с обходом блокировок', s: 'Устройства получат интернет с тем же обходом, что и компьютер', toggle: !!L.bypass, a: 'lanbypass' }));
-  rows.push(row({ t: 'Интернет с телефона', s: L.recv ? (L.recv_err || 'Через телефон ' + L.recv_host) : (L.recv_err || 'Компьютер подключён к точке доступа телефона, на котором включена «Раздача»'), toggle: !!L.recv, a: 'lanrecv' }));
-  return sec('Раздача и приём', rows) + '<div class="note">Раздача: устройства подключаются к сети этого компьютера и включают в Aristocrat NET «Интернет с телефона» или указывают прокси: адрес компьютера, порт 8282.<br>Приём: подключите компьютер к точке доступа телефона, на телефоне включите «Раздачу» в Aristocrat NET. Сайты открывает сам телефон — для оператора это его трафик, а не раздача.</div>';
+  rows.push(row({ t: 'Подключиться к раздаче', s: L.recv ? (L.recv_err || 'Подключено к ' + L.recv_host) : (L.recv_err || 'Интернет с устройства, на котором включена «Раздача» (компьютер — в его сети)'), toggle: !!L.recv, a: 'lanrecv' }));
+  return sec('Раздача и приём', rows) + '<div class="note">Раздача: устройства подключаются к сети этого компьютера и включают в Aristocrat NET «Подключиться к раздаче» или указывают прокси: адрес компьютера, порт 8282.<br>Подключение: подключите компьютер к сети раздающего устройства (например, к точке доступа телефона) и нажмите «Подключиться к раздаче». Сайты открывает раздающее устройство — для оператора это его трафик, а не раздача.</div>';
 }
 let recvBusy = false, lanErr = '';
 async function lanShare(on, bypass) { lanErr = ''; try { render(await api('lan/share', { on, bypass })); } catch (e) { toast(e.message); } }

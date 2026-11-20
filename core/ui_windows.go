@@ -412,7 +412,7 @@ type nativeUI struct {
 
 	// области щелчков (пиксели)
 	rBtn, rGear, rAbout, rPill walk.Rectangle
-	rShare, rRecv              walk.Rectangle // кнопки «Раздать интернет» и «Интернет с телефона»
+	rShare, rRecv              walk.Rectangle // кнопки «Раздать интернет» и «Подключиться к раздаче»
 	recvBusy                   bool           // идёт поиск телефона
 
 	// Настройки: текущая страница, прокрутка, подсветка, поля ввода.

@@ -413,7 +413,7 @@ func (u *nativeUI) trayMenu() {
 	p.items = append(p.items,
 		// В трее — без вопросов: с обходом, если обход включён.
 		&popItem{label: "Раздать интернет", check: true, checked: shareOn, act: func() { u.lanShare(!shareOn, u.a.eng.Running()) }},
-		&popItem{label: "Интернет с телефона", check: true, checked: recvOn, act: u.recvClick},
+		&popItem{label: "Подключиться к раздаче", check: true, checked: recvOn, act: u.recvClick},
 	)
 	if u.showAnt() { // сборка разработчика: переключатель раздачи «Ебаная Чукотка»
 		p.items = append(p.items, &popItem{label: "Раздача «Ебаная Чукотка»", check: true, checked: u.a.dev.On(), act: u.toggleShare})

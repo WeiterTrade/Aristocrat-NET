@@ -44,7 +44,7 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 		mToggle := systray.AddMenuItem("Включить обход", "")
 		// Раздача устройствам сети и приём интернета с телефона (см. lan.go).
 		mLanShare := systray.AddMenuItemCheckbox("Раздать интернет", "", false)
-		mLanRecv := systray.AddMenuItemCheckbox("Интернет с телефона", "", false)
+		mLanRecv := systray.AddMenuItemCheckbox("Подключиться к раздаче", "", false)
 		// Сборка разработчика: переключатель раздачи (виден, когда включён режим разработчика).
 		mShare := systray.AddMenuItemCheckbox("Раздача «Ебаная Чукотка»", "", false)
 		mShare.Hide()
@@ -79,7 +79,7 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 					} else {
 						go func() {
 							if err := a.recvStart(); err != nil {
-								a.logf("Интернет с телефона: %v", err)
+								a.logf("Подключение к раздаче: %v", err)
 							}
 						}()
 					}

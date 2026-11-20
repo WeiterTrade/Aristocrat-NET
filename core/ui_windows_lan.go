@@ -22,12 +22,12 @@ func (u *nativeUI) lanItems() []*sItem {
 			shareSub = "Компьютер не подключён к сети — подключите его к Wi-Fi или включите «Мобильный хот-спот»"
 		}
 	}
-	recvSub := "Компьютер подключён к точке доступа телефона, на котором включена «Раздача»"
+	recvSub := "Интернет с устройства, на котором включена «Раздача» (компьютер — в его сети)"
 	switch {
 	case recvOn && rerr != "":
 		recvSub = rerr
 	case recvOn:
-		recvSub = "Через телефон " + host
+		recvSub = "Подключено к " + host
 	case rerr != "":
 		recvSub = rerr
 	}
@@ -40,11 +40,11 @@ func (u *nativeUI) lanItems() []*sItem {
 			bypass, func() { u.lanShare(true, !bypass) }))
 	}
 	items = append(items,
-		toggleRow("Интернет с телефона", recvSub, recvOn, u.recvClick),
+		toggleRow("Подключиться к раздаче", recvSub, recvOn, u.recvClick),
 		&sItem{kind: kText, title: "Раздача: устройства подключаются к сети этого компьютера (роутер или «Мобильный хот-спот» Windows) " +
-			"и включают в Aristocrat NET «Интернет с телефона» или указывают прокси: адрес компьютера, порт 8282.\n" +
-			"Приём: подключите компьютер к точке доступа телефона, на телефоне включите «Раздачу» в Aristocrat NET. " +
-			"Сайты открывает сам телефон — для оператора это его трафик, а не раздача."},
+			"и включают в Aristocrat NET «Подключиться к раздаче» или указывают прокси: адрес компьютера, порт 8282.\n" +
+			"Подключение: подключите компьютер к сети раздающего устройства (например, к точке доступа телефона) и нажмите «Подключиться к раздаче». " +
+			"Сайты открывает раздающее устройство — для оператора это его трафик, а не раздача."},
 	)
 	return items
 }
@@ -80,7 +80,7 @@ func (u *nativeUI) shareClick() {
 	}
 	p := &popup{u: u, dialog: true, title: "Раздать интернет с компьютера",
 		text: "Устройства вашей сети (Wi-Fi роутера или «Мобильного хот-спота» Windows) получат интернет через этот компьютер. " +
-			"На них: Aristocrat NET → «Интернет с телефона» или прокси " + addr + ", порт 8282."}
+			"На них: Aristocrat NET → «Подключиться к раздаче» или прокси " + addr + ", порт 8282."}
 	p.items = []*popItem{
 		{label: "Отмена", button: true},
 		{label: "Без обхода", button: true, act: func() { u.lanShare(true, false) }},
@@ -89,7 +89,7 @@ func (u *nativeUI) shareClick() {
 	p.show(0, 0)
 }
 
-// recvClick — «Интернет с телефона»: включить (найти телефон) или выключить.
+// recvClick — «Подключиться к раздаче»: включить (найти раздачу) или выключить.
 func (u *nativeUI) recvClick() {
 	if on, _, _ := u.a.recvOn(); on {
 		go func() {
@@ -118,7 +118,7 @@ func (u *nativeUI) recvClick() {
 	}()
 }
 
-// lanButtons — две кнопки под плашкой IP: «Раздать интернет» и «Интернет с телефона».
+// lanButtons — две кнопки под плашкой IP: «Раздать интернет» и «Подключиться к раздаче».
 func (u *nativeUI) lanButtons(width, y int) {
 	s := u.dpiScale()
 	bw, bh, gap := int(184*s), int(36*s), int(12*s)
@@ -129,7 +129,7 @@ func (u *nativeUI) lanButtons(width, y int) {
 func (u *nativeUI) lanLabels() (share, recv string, shareOn, recvOn bool) {
 	shareOn, bypass := u.a.shareOn()
 	recvOn, _, _ = u.a.recvOn()
-	share, recv = "Раздать интернет", "Интернет с телефона"
+	share, recv = "Раздать интернет", "Подключиться к раздаче"
 	if shareOn {
 		share = "● Раздача включена"
 		if bypass {
@@ -140,9 +140,9 @@ func (u *nativeUI) lanLabels() (share, recv string, shareOn, recvOn bool) {
 	busy := u.recvBusy
 	u.mu.Unlock()
 	if busy {
-		recv = "Ищу телефон…"
+		recv = "Ищу раздачу…"
 	} else if recvOn {
-		recv = "● Интернет с телефона"
+		recv = "● Подключено к раздаче"
 	}
 	return
 }
