@@ -122,6 +122,23 @@
             android:text="@string/share_btn"
             android:textColor="@color/gold_light"
             android:textSize="16sp" />
+
+        <!-- Приём интернета с телефона — прямо на главном экране (на телевизоре шторки нет) -->
+        <TextView
+            android:id="@+id/recvBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/link_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingStart="18dp"
+            android:paddingTop="9dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="9dp"
+            android:text="@string/recv_btn"
+            android:textColor="@color/gold_light"
+            android:textSize="16sp" />
     </LinearLayout>
 
     <Button

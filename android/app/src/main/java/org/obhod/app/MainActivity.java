@@ -29,7 +29,7 @@ public class MainActivity extends Activity {
     private static final int REQ_VPN = 1;
 
     private Button power;
-    private TextView status, torStatus, ip, shareBtn;
+    private TextView status, torStatus, ip, shareBtn, recvBtn;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private String lastState = "";
     private long lastIpAt = 0;
@@ -57,6 +57,14 @@ public class MainActivity extends Activity {
         findViewById(R.id.about).setOnClickListener(v -> showAbout());
         shareBtn = findViewById(R.id.shareBtn);
         shareBtn.setOnClickListener(v -> startActivity(new Intent(this, ShareActivity.class)));
+        recvBtn = findViewById(R.id.recvBtn);
+        recvBtn.setOnClickListener(v -> {
+            if (ObhodVpnService.recvActive()) {
+                ObhodVpnService.run(this, false, false, false);
+            } else {
+                startActivity(StartActivity.intent(this, false, false, true));
+            }
+        });
         power.requestFocus();
 
         if (Build.VERSION.SDK_INT >= 33
@@ -131,6 +139,7 @@ public class MainActivity extends Activity {
         if (shareOnly) st = "off"; // обход выключен, работает только раздача
         boolean on = "on".equals(st);
         boolean starting = "starting".equals(st);
+        recvBtn.setText(ObhodVpnService.recvActive() ? R.string.recv_btn_on : R.string.recv_btn);
         if (ObhodVpnService.recvActive()) {
             shareBtn.setText(R.string.share_btn_recv);
         } else if (ObhodVpnService.shareActive()) {

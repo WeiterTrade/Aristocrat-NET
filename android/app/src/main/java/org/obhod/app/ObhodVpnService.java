@@ -134,12 +134,13 @@ public class ObhodVpnService extends VpnService {
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> startWith(app, vpn, share, recv), 1000);
     }
 
-    /** Обновить плитку в шторке. */
+    /** Обновить кнопки в шторке (открытые — сразу, остальные — при следующем открытии шторки). */
     static void updateTile(Context c) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return;
+        BaseTile.refreshAll();
+        for (Class<?> cl : new Class<?>[]{AristocratTile.class, ShareTile.class}) {
             try {
-                android.service.quicksettings.TileService.requestListeningState(c,
-                        new ComponentName(c, AristocratTile.class));
+                android.service.quicksettings.TileService.requestListeningState(c, new ComponentName(c, cl));
             } catch (Exception ignored) {
             }
         }

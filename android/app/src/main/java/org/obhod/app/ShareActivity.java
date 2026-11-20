@@ -49,15 +49,18 @@ public class ShareActivity extends Activity {
         findViewById(R.id.addTile).setOnClickListener(v -> addTile());
     }
 
-    /** Android 13+: система сама предлагает добавить плитку. Раньше — подсказка, где её найти. */
+    /** Android 13+: система сама предлагает добавить кнопки (по очереди). Раньше — подсказка, где их найти. */
     private void addTile() {
         if (Build.VERSION.SDK_INT >= 33) {
             try {
                 android.app.StatusBarManager sbm = getSystemService(android.app.StatusBarManager.class);
                 sbm.requestAddTileService(new ComponentName(this, AristocratTile.class),
-                        getString(R.string.app_name),
+                        getString(R.string.tile_vpn_label),
                         android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_tile),
-                        getMainExecutor(), r -> { });
+                        getMainExecutor(), r -> sbm.requestAddTileService(new ComponentName(this, ShareTile.class),
+                                getString(R.string.tile_share_label),
+                                android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_tile_share),
+                                getMainExecutor(), r2 -> { }));
                 return;
             } catch (Exception ignored) {
             }

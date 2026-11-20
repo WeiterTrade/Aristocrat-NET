@@ -139,6 +139,9 @@
     </string-array>
 
     <!-- Шторка, раздача и приём интернета -->
+    <string name="tile_vpn_label">Обход блокировок</string>
+    <string name="tile_share_label">Раздача</string>
+    <string name="tile_on">Включено</string>
     <string name="tile_off">Выключено</string>
     <string name="tile_vpn">Обход блокировок</string>
     <string name="tile_share">Раздача</string>
@@ -150,7 +153,9 @@
     <string name="mode_recv">Интернет с телефона (приём)</string>
     <string name="share_btn">📶 Раздача интернета</string>
     <string name="share_btn_on">📶 Раздача работает</string>
-    <string name="share_btn_recv">📶 Интернет с телефона</string>
+    <string name="share_btn_recv">📶 Раздача и приём</string>
+    <string name="recv_btn">📡 Интернет с телефона</string>
+    <string name="recv_btn_on">📡 Выключить приём</string>
     <string name="share_title">Раздача интернета</string>
     <string name="share_off">Раздача и приём выключены</string>
     <string name="share_on_plain">Раздача работает (без обхода блокировок)</string>
@@ -167,7 +172,7 @@
     <string name="recv_starting">Подключаюсь к телефону…</string>
     <string name="recv_on">Интернет идёт через телефон</string>
     <string name="vpn_need_perm">Без разрешения на VPN это невозможно</string>
-    <string name="tile_add">Добавить кнопку в шторку</string>
-    <string name="tile_add_help">Откройте шторку → значок редактирования (карандаш или квадрат с карандашом вверху) → найдите «Aristocrat NET» среди доступных кнопок и перетащите её к остальным.\n\nНа Huawei и Honor: «Панель управления» → значок редактирования справа вверху → внизу «Aristocrat NET».</string>
+    <string name="tile_add">Добавить кнопки в шторку</string>
+    <string name="tile_add_help">Откройте шторку → значок редактирования (карандаш или квадрат с карандашом вверху) → найдите кнопки «Обход блокировок» (щит) и «Раздача» (антенна) среди доступных и перетащите их к остальным.\n\nНа Huawei и Honor: «Панель управления» → значок редактирования справа вверху → внизу «Обход блокировок» и «Раздача».</string>
     <string name="share_help">Как это работает: телефон с сим-картой включает обычную точку доступа и «Раздачу». На втором устройстве (телефон, планшет, Android TV) с Aristocrat NET — «Интернет с телефона». Все сайты открывает сам первый телефон, поэтому оператор видит его обычный трафик, а не раздачу.\n\nУстройства без Aristocrat NET (ноутбук, iPhone): подключитесь к точке доступа и укажите в настройках этой сети прокси «Вручную» — адрес телефона и порт 8282. Без прокси такое устройство пойдёт в интернет обычной раздачей, и оператор её увидит.\n\nПроверка: на втором устройстве откройте в браузере http://адрес телефона:8282 — будет «раздача работает».</string>
 </resources>
