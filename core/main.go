@@ -386,6 +386,9 @@ func (a *App) needs() (warp, tor bool) {
 	a.mu.Lock()
 	st, cc := a.s, a.country
 	a.mu.Unlock()
+	if recvLink.Load() != nil {
+		return false, false // приём интернета с телефона: всё идёт через телефон
+	}
 	if a.sharing.Load() && (st.Route == RouteDPI || st.Route == RouteMoscow) {
 		st.Route = RouteAuto // идёт раздача: ей нужен полный обход (WARP и Tor)
 	}
@@ -568,6 +571,7 @@ func (a *App) disable() {
 	a.mu.Lock()
 	port := a.s.Port
 	a.mu.Unlock()
+	a.clearRecv()
 	UnsetSystemProxy(port)
 	a.eng.Stop()
 	if a.sharing.Load() {
@@ -603,7 +607,7 @@ func (a *App) state() map[string]any {
 		return out
 	}
 	upLines, upWarns := a.upstreamLines()
-	summary := routeSummary(a.settings())
+	summary := a.summary()
 	ts, tp, te := a.tor.Status()
 	ws, we := a.warp.Status()
 	wep := a.warp.Endpoint()
@@ -611,6 +615,7 @@ func (a *App) state() map[string]any {
 	ads := map[string]any{"on": cur.AdBlock, "blocked": a.ads.Count(), "rules": a.ads.Rules()}
 	askBridges, offer := a.askBridges(), a.shareOffer()
 	dev := a.devState()
+	lanSt := a.lanStateMap()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if te == "" {
@@ -632,6 +637,7 @@ func (a *App) state() map[string]any {
 		"ads":         ads,
 		"ask_bridges": askBridges,
 		"dev":         dev,
+		"lan":         lanSt,
 		"share_offer": offer,
 		"bridges":     kv(bridgeOrder, BridgeNames),
 		"tor":         map[string]any{"status": ts, "progress": tp, "error": te},
@@ -816,6 +822,38 @@ func (a *App) routes(mux *http.ServeMux, shutdown func()) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if devErr(w, a.devSetShare(req.On)) {
 			return
+		}
+		writeJSON(w, 200, a.state())
+	}))
+	// Раздача интернета устройствам сети и приём интернета с телефона.
+	mux.HandleFunc("/api/lan/share", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			On     bool `json:"on"`
+			Bypass bool `json:"bypass"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.On {
+			if err := a.shareStart(req.Bypass); err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		} else {
+			a.shareStop()
+		}
+		writeJSON(w, 200, a.state())
+	}))
+	mux.HandleFunc("/api/lan/recv", a.guard(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			On bool `json:"on"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.On {
+			if err := a.recvStart(); err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		} else {
+			a.recvStop()
 		}
 		writeJSON(w, 200, a.state())
 	}))
@@ -1194,7 +1232,7 @@ func publicIP() (string, string, error) {
 	if ipCache.ip != "" && time.Now().Before(ipCache.exp) {
 		return ipCache.ip, ipCache.country, nil
 	}
-	cl := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	cl := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: nil, DialContext: netDial}}
 	get := func(u string) ([]byte, error) {
 		resp, err := cl.Get(u)
 		if err != nil {
@@ -1470,7 +1508,7 @@ func myCity(ip string) string {
 	}
 	ipCache.Unlock()
 	if city == "" {
-		cl := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: nil}}
+		cl := &http.Client{Timeout: 6 * time.Second, Transport: &http.Transport{Proxy: nil, DialContext: netDial}}
 		if resp, err := cl.Get("https://ipwho.is/"); err == nil {
 			var m map[string]any
 			_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&m)

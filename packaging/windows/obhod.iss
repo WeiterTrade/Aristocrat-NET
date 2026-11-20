@@ -80,15 +80,15 @@ Name: "{autoprograms}\Aristocrat NET"; Filename: "{app}\Obhod.exe"; IconFilename
 Name: "{autodesktop}\Aristocrat NET"; Filename: "{app}\Obhod.exe"; IconFilename: "{app}\obhod.ico"; Tasks: desktopicon
 
 [Run]
-#ifdef DEV
-; Сборка разработчика: входящие подключения к раздаче напрямую (белый IP) — разрешить в брандмауэре.
+; Входящие подключения к программе — разрешить в брандмауэре: раздача интернета устройствам сети
+; (порт 8282), а в сборке разработчика — и раздача «Ебаная Чукотка» (белый IP).
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Aristocrat NET (раздача)"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Aristocrat NET (раздача)"" dir=in action=allow program=""{app}\Obhod.exe"" enable=yes profile=any"; Flags: runhidden
-#endif
 Filename: "{app}\Obhod.exe"; Description: "Запустить Aristocrat NET"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM Obhod.exe"; Flags: runhidden; RunOnceId: "KillObhod"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Aristocrat NET (раздача)"""; Flags: runhidden; RunOnceId: "DelFirewall"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\tor"

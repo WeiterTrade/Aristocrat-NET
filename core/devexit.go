@@ -394,7 +394,7 @@ func (d *DevServer) StopExit() {
 		c.Close()
 	}
 	ag.mu.Unlock()
-	d.a.sharing.Store(d.On())
+	d.a.updSharing()
 	d.a.logf("Выход в интернет через этот компьютер выключен")
 }
 

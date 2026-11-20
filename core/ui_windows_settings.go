@@ -344,6 +344,7 @@ func (u *nativeUI) buildPage(id string) sPage {
 		row("При закрытии окна", "", closeNames[st.CloseAction], u.open("close")),
 		row("Порт прокси", "", strconv.Itoa(st.Port), u.open("port")),
 	)
+	items = append(items, u.lanItems()...)
 	items = append(items, u.devItems(st)...)
 	items = append(items,
 		section("Другие"),

@@ -25,15 +25,16 @@ type Engine struct {
 	Route     atomic.Value // RouteAuto | RouteDPI | RouteTor
 	Tor       *Tor
 	Warp      *Warp
-	Local     *Local        // российские и казахстанские сайты — напрямую; Spotify в России — через Tor
-	Ads       *AdBlock      // блокировка рекламы (nil — выключена)
-	Direct    *DevLink      // через сервер разработчика с белым IP (nil — нет кода)
-	Share     *ShareAuth    // раздача (сборка разработчика): вход по логину SOCKS5, учёт клиентов
-	names     dnsNames      // адрес → имя сайта (по ответам нашего DNS, см. dnsserver.go)
-	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
-	Plain     atomic.Bool   // без обхода: просто прокси (раздача Wi-Fi без шифрования, Android)
-	Timeout   time.Duration // ожидание ответа сервера на каждый метод
-	TorWait   time.Duration // сколько ждать подключения Tor при фолбэке
+	Local     *Local                    // российские и казахстанские сайты — напрямую; Spotify в России — через Tor
+	Ads       *AdBlock                  // блокировка рекламы (nil — выключена)
+	Direct    *DevLink                  // через сервер разработчика с белым IP (nil — нет кода)
+	Share     *ShareAuth                // раздача (сборка разработчика): вход по логину SOCKS5, учёт клиентов
+	names     dnsNames                  // адрес → имя сайта (по ответам нашего DNS, см. dnsserver.go)
+	BlockQUIC bool                      // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
+	Plain     atomic.Bool               // без обхода: просто прокси (раздача Wi-Fi без шифрования, Android)
+	forcedUp  atomic.Pointer[phoneLink] // приём интернета с телефона: всё — только через него
+	Timeout   time.Duration             // ожидание ответа сервера на каждый метод
+	TorWait   time.Duration             // сколько ждать подключения Tor при фолбэке
 
 	DialTimeout time.Duration
 
@@ -198,7 +199,7 @@ func (e *Engine) warpOn() bool { return e.Warp != nil && e.Warp.Enabled() }
 // upstreams — запасные пути по порядку для текущего режима.
 func (e *Engine) upstreams() []Upstream {
 	var out []Upstream
-	if e.Plain.Load() {
+	if e.Plain.Load() || e.forcedUp.Load() != nil {
 		return nil
 	}
 	switch e.route() {
@@ -253,7 +254,12 @@ func (e *Engine) upstreamByName(name string) Upstream {
 }
 
 // viaFirst — путь, по которому идти сразу, не пытаясь напрямую (nil — напрямую).
+func (e *Engine) setForced(l *phoneLink) { e.forcedUp.Store(l) }
+
 func (e *Engine) viaFirst(host string) (Upstream, error) {
+	if l := e.forcedUp.Load(); l != nil {
+		return l, nil // приём: всё через телефон, напрямую — ничего
+	}
 	if e.Plain.Load() {
 		return nil, nil
 	}
@@ -750,6 +756,9 @@ var errConnect = errors.New("не удаётся установить TCP-сое
 
 // dial подключается напрямую к первому доступному адресу домена.
 func (e *Engine) dial(ctx context.Context, host string, port int) (net.Conn, error) {
+	if l := e.forcedUp.Load(); l != nil {
+		return l.Dial(ctx, host, port)
+	}
 	ips, err := e.Resolver.Lookup(ctx, host)
 	if err != nil {
 		return nil, err
@@ -910,8 +919,8 @@ func shortErr(err error) string {
 }
 
 func (e *Engine) markOK(host, strat string, retried bool) {
-	if strat == StratDev {
-		return // путь «через разработчика» не запоминаем: он выбран режимом, а не сайтом
+	if strat == StratDev || strat == StratPhone {
+		return // путь «через разработчика» и «через телефон» не запоминаем: он выбран режимом, а не сайтом
 	}
 	if strat != StratTLSRec && strat != StratNone && !isUpstreamStrat(strat) {
 		e.fixed.Add(1)

@@ -49,9 +49,12 @@ func NewResolver(preferred string, logf func(string, ...any)) *Resolver {
 	tr := &http.Transport{
 		Proxy: nil, // DoH идёт напрямую, но с обходом DPI
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, addr)
+			c, err := netDial(ctx, network, addr) // при приёме интернета с телефона — через него
 			if err != nil {
 				return nil, err
+			}
+			if recvLink.Load() != nil {
+				return c, nil
 			}
 			return &desyncConn{Conn: c, strat: StratTLSRec}, nil
 		},

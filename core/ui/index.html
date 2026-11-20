@@ -111,6 +111,11 @@
   .cmenu div:hover { background:var(--hover); }
   .cmenu div.off { color:var(--steel); cursor:default; background:none; }
   .cmenu hr { border:0; border-top:1px solid var(--line); margin:4px 6px; }
+  .lanrow { display:flex; gap:12px; margin-top:12px; justify-content:center; flex-wrap:wrap; }
+  .lanbtn { background:var(--card); border:1px solid var(--line); border-radius:999px; color:var(--text); padding:9px 18px; font-size:14px; cursor:pointer; font-family:inherit; }
+  .lanbtn:hover { background:var(--hover); }
+  .lanbtn.on { border-color:var(--gold); color:var(--goldl); background:var(--deep); }
+  .lanbtn:focus-visible { outline:2px solid var(--gold); outline-offset:3px; }
   .modal { position:fixed; inset:0; background:rgba(5,8,18,.75); display:flex; align-items:center; justify-content:center; padding:16px; }
   .modal .card { max-width:400px; width:100%; background:linear-gradient(var(--grad),var(--bg)); border:1px solid var(--line); border-radius:18px; padding:20px; }
   .modal p { margin:8px 0; font-size:13px; color:var(--text); }
@@ -127,6 +132,7 @@
   <div class="state" id="state">Выключено</div>
   <div class="sub" id="sub"></div>
   <div class="ip" id="ip">Ваш IP: <b>…</b></div>
+  <div class="lanrow"><button class="lanbtn" id="shareBtn">Раздать интернет</button><button class="lanbtn" id="recvBtn">Интернет с телефона</button></div>
   <div class="err" id="err"></div>
   <button class="gear" id="gear" title="Настройки" aria-label="Настройки">⚙</button>
   <button class="gear ant hidden" id="ant" title="Раздача интернета" aria-label="Раздача интернета"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="10" r="1.6" fill="currentColor"/><path d="M12 11.6V20"/><path d="M8.5 6.5a5 5 0 0 0 0 7M15.5 6.5a5 5 0 0 1 0 7M5.6 3.8a9 9 0 0 0 0 12.4M18.4 3.8a9 9 0 0 1 0 12.4"/></svg></button>
@@ -146,6 +152,13 @@
     <p>В трее программа продолжит работать, и защита останется включённой. «Выйти» — выключить защиту и закрыть программу.</p>
     <label class="hint" style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="closeRemember"> Запомнить выбор</label>
     <div class="btns" style="justify-content:flex-end"><button class="btn ghost" id="closeQuit">Выйти</button><button class="btn" id="closeTray">Свернуть в трей</button></div>
+  </div>
+</div>
+<div class="modal hidden" id="shareAsk">
+  <div class="card">
+    <h3 style="margin:0 0 8px;color:var(--goldl)">Раздать интернет с компьютера</h3>
+    <p>Устройства вашей сети (Wi-Fi роутера или точки доступа этого компьютера) получат интернет через него. На них: Aristocrat NET → «Интернет с телефона» или прокси <b id="shareAddr"></b>, порт 8282.</p>
+    <div class="btns" style="justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" id="shareCancel">Отмена</button><button class="btn ghost" id="sharePlain">Без обхода</button><button class="btn" id="shareBypass">С обходом блокировок</button></div>
   </div>
 </div>
 <div class="modal hidden" id="welcome">
@@ -198,7 +211,12 @@ function renderHome(s) {
   if (s.on && (s.up_lines || []).length) sub += '<br>' + esc(s.up_lines.join(' · '));
   if (s.on && s.tor.status === 'starting' && (s.up_lines || []).some(l => l.startsWith('Tor'))) sub += '<div class="bar"><i style="width:' + s.tor.progress + '%"></i></div>';
   $('sub').innerHTML = sub;
-  $('err').textContent = [s.proxy_err].concat(s.on ? (s.up_warns || []) : []).filter(Boolean).join('\n');
+  const L = s.lan || {};
+  $('err').textContent = [s.proxy_err, lanErr || L.recv_err].concat(s.on ? (s.up_warns || []) : []).filter(Boolean).join('\n');
+  $('shareBtn').className = 'lanbtn' + (L.share ? ' on' : '');
+  $('shareBtn').textContent = L.share ? (L.bypass ? '● Раздача с обходом' : '● Раздача включена') : 'Раздать интернет';
+  $('recvBtn').className = 'lanbtn' + (L.recv ? ' on' : '');
+  $('recvBtn').textContent = recvBusy ? 'Ищу телефон…' : L.recv ? '● Интернет с телефона' : 'Интернет с телефона';
   $('ver').textContent = 'v' + s.version;
   $('aboutVer').textContent = 'версия ' + s.version;
   if (lastOn !== s.on) { lastOn = s.on; loadIP(); }
@@ -282,6 +300,7 @@ function renderPage() {
         row({ t: 'При закрытии окна', v: nameOf(closeNames, st.close_action || ''), nav: 1, a: 'go:close' }),
         row({ t: 'Порт прокси', v: String(st.port), nav: 1, a: 'go:port' }),
       ]) +
+      lanSection(s) +
       devSection(s) +
       sec('Другие', [
         row({ t: 'Журнал', nav: 1, a: 'go:logs' }),
@@ -352,6 +371,9 @@ $('page').addEventListener('click', async e => {
     await save({ [k]: v }); go('root');
   }
   else if (a === 'devunlock') devUnlock();
+  else if (a === 'lanshare') { if (S.lan && S.lan.share) lanShare(false, false); else askShare(); }
+  else if (a === 'lanbypass') lanShare(true, !S.lan.bypass);
+  else if (a === 'lanrecv') lanRecv();
   else if (a === 'devexit') { try { render(await api('dev/exit', { on: !S.dev.exit })); } catch (e) { toast(e.message); } }
   else if (a === 'devshare') { try { render(await api('dev/share', { on: !S.dev.share })); } catch (e) { toast(e.message); } }
   else if (a === 'devlock') { if (confirm('Выключить режим разработчика? Раздача тоже выключится.')) { render(await api('dev/lock', {})); } }
@@ -360,7 +382,7 @@ $('page').addEventListener('click', async e => {
   else if (cmd === 'devsave') { try { const r = await api('dev/key/save', { where: k }); alert('Ключ сохранён:\n' + r.paths.join('\n')); } catch (e) { alert(e.message); } }
   else if (a === 'devpaste') {
     let t = ''; try { t = await navigator.clipboard.readText(); } catch {}
-    if (!t) t = prompt('Вставьте ключ (строка начинается с ARISTONET-KEY1:)') || '';
+    if (!t) t = prompt('Вставьте ключ (строка начинается с ARISTONET-KEY2:)') || '';
     if (t) devImport(t);
   }
   else if (a === 'devfile') $('devfile').click();
@@ -395,6 +417,35 @@ $('page').addEventListener('click', async e => {
 const BOT = 'https://t.me/GetBridgesBot';
 
 // ---------- режим разработчика (сборка разработчика) ----------
+function lanSection(s) {
+  const L = s.lan || {};
+  const addrs = (L.addrs || []).join(', ');
+  const rows = [row({ t: 'Раздать интернет', s: L.share ? (addrs ? 'Адрес: ' + addrs + ', порт ' + L.port : 'Компьютер не подключён к сети — подключите его к Wi-Fi или включите точку доступа') : 'Устройства вашей сети получат интернет через этот компьютер', toggle: !!L.share, a: 'lanshare' })];
+  if (L.share) rows.push(row({ t: 'Раздавать с обходом блокировок', s: 'Устройства получат интернет с тем же обходом, что и компьютер', toggle: !!L.bypass, a: 'lanbypass' }));
+  rows.push(row({ t: 'Интернет с телефона', s: L.recv ? (L.recv_err || 'Через телефон ' + L.recv_host) : (L.recv_err || 'Компьютер подключён к точке доступа телефона, на котором включена «Раздача»'), toggle: !!L.recv, a: 'lanrecv' }));
+  return sec('Раздача и приём', rows) + '<div class="note">Раздача: устройства подключаются к сети этого компьютера и включают в Aristocrat NET «Интернет с телефона» или указывают прокси: адрес компьютера, порт 8282.<br>Приём: подключите компьютер к точке доступа телефона, на телефоне включите «Раздачу» в Aristocrat NET. Сайты открывает сам телефон — для оператора это его трафик, а не раздача.</div>';
+}
+let recvBusy = false, lanErr = '';
+async function lanShare(on, bypass) { lanErr = ''; try { render(await api('lan/share', { on, bypass })); } catch (e) { toast(e.message); } }
+async function lanRecv() {
+  const L = (S && S.lan) || {};
+  if (L.recv) { try { render(await api('lan/recv', { on: false })); } catch (e) { toast(e.message); } return; }
+  recvBusy = true; lanErr = ''; renderHome(S);
+  try { render(await api('lan/recv', { on: true })); } catch (e) { lanErr = e.message; toast(e.message); }
+  recvBusy = false; renderHome(S);
+}
+function askShare() {
+  const L = (S && S.lan) || {};
+  if (L.share) { lanShare(false, false); return; }
+  $('shareAddr').textContent = (L.addrs || []).join(', ') || 'адрес этого компьютера';
+  $('shareAsk').classList.remove('hidden');
+}
+$('shareBtn').onclick = askShare;
+$('recvBtn').onclick = lanRecv;
+$('shareCancel').onclick = () => $('shareAsk').classList.add('hidden');
+$('sharePlain').onclick = () => { $('shareAsk').classList.add('hidden'); lanShare(true, false); };
+$('shareBypass').onclick = () => { $('shareAsk').classList.add('hidden'); lanShare(true, true); };
+
 function devSection(s) {
   const d = s.dev || {};
   if (!d.build) return '';

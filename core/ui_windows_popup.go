@@ -408,8 +408,15 @@ func (u *nativeUI) trayMenu() {
 		{label: "Открыть " + appTitle, act: u.showWindow},
 		{label: toggle, act: u.toggle},
 	}}
-	if u.showAnt() { // сборка разработчика: переключатель раздачи
-		p.items = append(p.items, &popItem{label: "Раздача интернета", check: true, checked: u.a.dev.On(), act: u.toggleShare})
+	shareOn, _ := u.a.shareOn()
+	recvOn, _, _ := u.a.recvOn()
+	p.items = append(p.items,
+		// В трее — без вопросов: с обходом, если обход включён.
+		&popItem{label: "Раздать интернет", check: true, checked: shareOn, act: func() { u.lanShare(!shareOn, u.a.eng.Running()) }},
+		&popItem{label: "Интернет с телефона", check: true, checked: recvOn, act: u.recvClick},
+	)
+	if u.showAnt() { // сборка разработчика: переключатель раздачи «Ебаная Чукотка»
+		p.items = append(p.items, &popItem{label: "Раздача «Ебаная Чукотка»", check: true, checked: u.a.dev.On(), act: u.toggleShare})
 	}
 	p.items = append(p.items, []*popItem{
 		{sep: true},

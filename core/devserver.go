@@ -593,7 +593,7 @@ func (d *DevServer) Stop() {
 	d.mu.Unlock()
 	if eng != nil {
 		eng.Stop()
-		d.a.sharing.Store(d.ExitOn())
+		d.a.updSharing()
 		d.a.logf("Раздача выключена")
 	}
 }

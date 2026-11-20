@@ -42,8 +42,11 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 		systray.SetOnTapped(request)
 		mOpen := systray.AddMenuItem("Открыть "+appTitle, "")
 		mToggle := systray.AddMenuItem("Включить обход", "")
+		// Раздача устройствам сети и приём интернета с телефона (см. lan.go).
+		mLanShare := systray.AddMenuItemCheckbox("Раздать интернет", "", false)
+		mLanRecv := systray.AddMenuItemCheckbox("Интернет с телефона", "", false)
 		// Сборка разработчика: переключатель раздачи (виден, когда включён режим разработчика).
-		mShare := systray.AddMenuItemCheckbox("Раздача интернета", "", false)
+		mShare := systray.AddMenuItemCheckbox("Раздача «Ебаная Чукотка»", "", false)
 		mShare.Hide()
 		systray.AddSeparator()
 		mQuit := systray.AddMenuItem("Выход", "")
@@ -64,11 +67,37 @@ func runDesktopUI(a *App, url string, show bool, quit func(), done <-chan struct
 				case <-mQuit.ClickedCh:
 					go quit()
 					return
+				case <-mLanShare.ClickedCh:
+					if on, _ := a.shareOn(); on {
+						a.shareStop()
+					} else if err := a.shareStart(a.eng.Running()); err != nil { // с обходом, если обход включён
+						a.logf("Раздача: %v", err)
+					}
+				case <-mLanRecv.ClickedCh:
+					if on, _, _ := a.recvOn(); on {
+						a.recvStop()
+					} else {
+						go func() {
+							if err := a.recvStart(); err != nil {
+								a.logf("Интернет с телефона: %v", err)
+							}
+						}()
+					}
 				case <-mShare.ClickedCh:
 					if err := a.devSetShare(!a.dev.On()); err != nil {
 						a.logf("Раздача: %v", err)
 					}
 				case <-time.After(time.Second):
+				}
+				if on, _ := a.shareOn(); on {
+					mLanShare.Check()
+				} else {
+					mLanShare.Uncheck()
+				}
+				if on, _, _ := a.recvOn(); on {
+					mLanRecv.Check()
+				} else {
+					mLanRecv.Uncheck()
 				}
 				if devBuild && a.settings().DevMode {
 					mShare.Show()

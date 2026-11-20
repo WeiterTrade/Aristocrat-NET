@@ -412,6 +412,8 @@ type nativeUI struct {
 
 	// области щелчков (пиксели)
 	rBtn, rGear, rAbout, rPill walk.Rectangle
+	rShare, rRecv              walk.Rectangle // кнопки «Раздать интернет» и «Интернет с телефона»
+	recvBusy                   bool           // идёт поиск телефона
 
 	// Настройки: текущая страница, прокрутка, подсветка, поля ввода.
 	page      string
@@ -971,7 +973,6 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 	u.layout(b.Width, b.Height)
 
 	on := u.a.eng.Running()
-	st := u.a.settings()
 	upLines, upWarns := u.a.upstreamLines()
 	u.mu.Lock()
 	busy, errText, ip, cc := u.busy, u.errText, u.ip, u.cc
@@ -1006,6 +1007,8 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 	stateY := u.rBtn.Y + u.rBtn.Height + int(20*s)
 	pillY := stateY + int(96*s)
 	u.rPill = walk.Rectangle{X: (b.Width - pillW) / 2, Y: pillY, Width: pillW, Height: pillH}
+	u.lanButtons(b.Width, pillY+pillH+int(12*s))
+	shareLbl, recvLbl, shareOn, recvOn := u.lanLabels()
 
 	// Фон и фигуры — одной сглаженной картинкой (пересчитывается только при изменениях).
 	key := sceneKey{w: b.Width, h: b.Height, state: state, view: u.view, pill: u.rPill, gear: u.rGear, btn: u.rBtn}
@@ -1034,6 +1037,18 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 	copy(o.img.Pix, u.sceneImg.Pix)
 	if u.view == viewHome && u.showAnt() {
 		u.drawAntenna(o.img)
+	}
+	if u.view == viewHome {
+		for _, bt := range []struct {
+			r  walk.Rectangle
+			on bool
+		}{{u.rShare, shareOn}, {u.rRecv, recvOn}} {
+			fill, line := cCard, cLine
+			if bt.on {
+				fill, line = cDeep, cGold
+			}
+			roundRect(o.img, bt.r, float64(bt.r.Height)/2, fill, line)
+		}
 	}
 	if u.view == viewHome && fw > 0 {
 		drawImageScaled(o.img, u.flagImg, walk.Rectangle{X: u.rPill.X + padX, Y: pillY + (pillH-fh)/2, Width: fw, Height: fh})
@@ -1070,7 +1085,7 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 		walk.Rectangle{X: 0, Y: stateY, Width: b.Width, Height: int(28 * s)}, dtCenter|dtSingle)
 	sub := "Трафик идёт как обычно"
 	if on {
-		sub = routeSummary(st)
+		sub = u.a.summary()
 		if len(upLines) > 0 {
 			sub += "\n" + strings.Join(upLines, " · ")
 		}
@@ -1085,6 +1100,20 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 	}
 	u.txt.draw(hdc, ipText, fIP, cText, walk.Rectangle{X: x, Y: pillY + (pillH-th)/2, Width: tw + 2, Height: th}, dtLeft|dtSingle)
 
+	// Раздача и приём
+	fLan := u.txt.font("Segoe UI", int(13*s), false)
+	for _, bt := range []struct {
+		r   walk.Rectangle
+		lbl string
+		on  bool
+	}{{u.rShare, shareLbl, shareOn}, {u.rRecv, recvLbl, recvOn}} {
+		col := cText
+		if bt.on {
+			col = cGoldLight
+		}
+		u.txt.draw(hdc, bt.lbl, fLan, col, bt.r, dtCenter|dtVCenter|dtSingle)
+	}
+
 	// Ошибки и подсказки
 	var msgs []string
 	if errText != "" {
@@ -1096,8 +1125,11 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 	if on {
 		msgs = append(msgs, upWarns...)
 	}
+	if _, _, rerr := u.a.recvOn(); rerr != "" && errText == "" {
+		msgs = append(msgs, rerr)
+	}
 	if len(msgs) > 0 {
-		y := pillY + pillH + int(14*s)
+		y := u.rShare.Y + u.rShare.Height + int(12*s)
 		u.txt.draw(hdc, strings.Join(msgs, "\n"), u.txt.font("Segoe UI", int(12*s), false), cOnSkyWarn,
 			walk.Rectangle{X: int(24 * s), Y: y, Width: b.Width - int(48*s), Height: u.rGear.Y - y - int(6*s)}, dtCenter|dtWord)
 	}
@@ -1147,6 +1179,10 @@ func (u *nativeUI) homeDown(x, y int, button walk.MouseButton) {
 		u.setView(viewSettings)
 	case u.showAnt() && inCircle(u.antRect(), x, y):
 		u.toggleShare()
+	case inRect(u.rShare, x, y):
+		u.shareClick()
+	case inRect(u.rRecv, x, y):
+		u.recvClick()
 	case inRect(u.rAbout, x, y):
 		u.setView(viewAbout)
 	}
@@ -1158,6 +1194,7 @@ func (u *nativeUI) homeMove(x, y int, _ walk.MouseButton) {
 		u.title.Invalidate()
 	}
 	if u.view == viewHome && (inCircle(u.rBtn, x, y) || inCircle(u.rGear, x, y) || inRect(u.rAbout, x, y) ||
+		inRect(u.rShare, x, y) || inRect(u.rRecv, x, y) ||
 		(u.showAnt() && inCircle(u.antRect(), x, y))) {
 		u.home.SetCursor(walk.CursorHand())
 	} else {
@@ -1183,7 +1220,9 @@ func (u *nativeUI) ticker(done <-chan struct{}) {
 		}
 		ul, uw := u.a.upstreamLines()
 		st := u.a.settings()
-		sig := fmt.Sprintf("%v|%v|%v|%s|%s|%s", on, ul, uw, u.a.proxyErr, st.Route, st.Heavy)
+		lanSig := fmt.Sprint(u.a.shareOn())
+		lanSig += fmt.Sprint(u.a.recvOn())
+		sig := fmt.Sprintf("%v|%v|%v|%s|%s|%s|%s", on, ul, uw, u.a.proxyErr, st.Route, st.Heavy, lanSig)
 		u.mu.Lock()
 		changed := sig != u.lastSig
 		u.lastSig = sig
