@@ -433,10 +433,9 @@ public class ObhodVpnService extends VpnService {
         try {
             android.net.Network wifi = LanInfo.wifiNetwork(this);
             if (wifi == null) throw new IOException("подключитесь к точке доступа телефона по Wi-Fi");
-            String gw = LanInfo.gateway(this, wifi);
-            if (gw == null) throw new IOException("не удалось узнать адрес телефона в этой сети Wi-Fi");
-            if (!LanInfo.probe(wifi, gw, SHARE_PORT)) {
-                throw new IOException("на телефоне " + gw + " не включена раздача: включите на нём точку доступа и «Раздача» в Aristocrat NET");
+            String gw = LanInfo.find(this, wifi, SHARE_PORT);
+            if (gw == null) {
+                throw new IOException("раздача не найдена: включите на телефоне точку доступа и «Раздача» в Aristocrat NET (или «Раздать интернет» на компьютере в этой сети)");
             }
             recvHost = gw;
             Builder b = new Builder()

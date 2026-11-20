@@ -73,12 +73,52 @@ final class LanInfo {
         return null;
     }
 
+    /**
+     * Найти раздачу Aristocrat NET в сети Wi-Fi: сначала роутер (точка доступа телефона — это он сам),
+     * потом все адреса сети (раздача с компьютера в домашней сети). null — не найдено.
+     */
+    static String find(Context c, Network n, int port) {
+        String gw = gateway(c, n);
+        if (gw != null && probe(n, gw, port, 2500)) return gw;
+        ConnectivityManager cm = (ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
+        LinkProperties lp = cm == null ? null : cm.getLinkProperties(n);
+        if (lp == null) return null;
+        List<String> cands = new ArrayList<>();
+        for (android.net.LinkAddress la : lp.getLinkAddresses()) {
+            InetAddress a = la.getAddress();
+            if (!(a instanceof Inet4Address) || la.getPrefixLength() < 24) continue;
+            byte[] b = a.getAddress();
+            for (int i = 1; i < 255; i++) {
+                if ((b[3] & 0xff) == i) continue;
+                cands.add((b[0] & 0xff) + "." + (b[1] & 0xff) + "." + (b[2] & 0xff) + "." + i);
+            }
+        }
+        if (cands.isEmpty()) return null;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(48);
+        java.util.concurrent.ExecutorCompletionService<String> done = new java.util.concurrent.ExecutorCompletionService<>(pool);
+        for (String h : cands) done.submit(() -> probe(n, h, port, 800) ? h : null);
+        try {
+            for (int i = 0; i < cands.size(); i++) {
+                String h = done.take().get();
+                if (h != null) return h;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            pool.shutdownNow();
+        }
+        return null;
+    }
+
     /** На этом адресе работает раздача Aristocrat NET? */
     static boolean probe(Network n, String host, int port) {
+        return probe(n, host, port, 3000);
+    }
+
+    static boolean probe(Network n, String host, int port, int timeoutMs) {
         try (Socket s = new Socket()) {
             if (n != null) n.bindSocket(s);
-            s.connect(new InetSocketAddress(host, port), 3000);
-            s.setSoTimeout(3000);
+            s.connect(new InetSocketAddress(host, port), timeoutMs);
+            s.setSoTimeout(timeoutMs);
             OutputStream o = s.getOutputStream();
             o.write(("GET / HTTP/1.0\r\nHost: " + host + ":" + port + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
             o.flush();
