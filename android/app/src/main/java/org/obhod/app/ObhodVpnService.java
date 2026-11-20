@@ -271,8 +271,8 @@ public class ObhodVpnService extends VpnService {
     }
 
     private String notifText() {
-        if (runRecv) return "Интернет через телефон " + recvHost;
-        String share = "Раздача: включите точку доступа; на втором устройстве — Aristocrat NET → «Интернет с телефона»";
+        if (runRecv) return "Подключено к раздаче " + recvHost;
+        String share = "Раздача: включите точку доступа; на втором устройстве — Aristocrat NET → «Подключиться к раздаче»";
         if (runVpn && runShare) return getString(R.string.notif_text) + "\n" + share + " (с обходом)";
         if (runShare) return share;
         return getString(R.string.notif_text);
@@ -432,10 +432,10 @@ public class ObhodVpnService extends VpnService {
     private void startRecv() {
         try {
             android.net.Network wifi = LanInfo.wifiNetwork(this);
-            if (wifi == null) throw new IOException("подключитесь к точке доступа телефона по Wi-Fi");
+            if (wifi == null) throw new IOException("подключитесь по Wi-Fi к сети раздающего устройства");
             String gw = LanInfo.find(this, wifi, SHARE_PORT);
             if (gw == null) {
-                throw new IOException("раздача не найдена: включите на телефоне точку доступа и «Раздача» в Aristocrat NET (или «Раздать интернет» на компьютере в этой сети)");
+                throw new IOException("раздача не найдена: на раздающем устройстве включите «Раздачу» в Aristocrat NET (на телефоне — и точку доступа) и подключитесь к его сети");
             }
             recvHost = gw;
             Builder b = new Builder()
@@ -477,7 +477,7 @@ public class ObhodVpnService extends VpnService {
             }
             TProxyService.TProxyStartService(conf.getAbsolutePath(), tun.getFd());
             state = "on";
-            log("Интернет через телефон " + gw);
+            log("Подключено к раздаче " + gw);
             startInForeground();
             updateTile(this);
         } catch (Exception e) {
