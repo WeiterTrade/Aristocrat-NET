@@ -31,6 +31,7 @@ public class AristocratTile extends TileService {
 
     private String modeText() {
         if (!ObhodVpnService.active()) return getString(R.string.tile_off);
+        if (ObhodVpnService.runRecv) return getString(R.string.tile_recv);
         if (ObhodVpnService.runVpn && ObhodVpnService.runShare) return getString(R.string.tile_both);
         if (ObhodVpnService.runShare) return getString(R.string.tile_share);
         return getString(R.string.tile_vpn);
@@ -43,25 +44,24 @@ public class AristocratTile extends TileService {
             update();
             return;
         }
-        String[] items = {getString(R.string.mode_vpn), getString(R.string.mode_share), getString(R.string.mode_both)};
+        String[] items = {getString(R.string.mode_vpn), getString(R.string.mode_share),
+                getString(R.string.mode_both), getString(R.string.mode_recv)};
         AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle(R.string.app_name)
-                .setItems(items, (dlg, which) -> choose(which != 1, which != 0))
+                .setItems(items, (dlg, which) -> choose(which == 0 || which == 2, which == 1 || which == 2, which == 3))
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
         showDialog(d);
     }
 
-    private void choose(boolean vpn, boolean share) {
-        boolean needUi = (vpn && VpnService.prepare(this) != null)
-                || (share && (WifiShare.missingPermission(this) != null || !WifiShare.wifiOn(this)));
-        if (!needUi) {
-            ObhodVpnService.run(this, vpn, share);
+    private void choose(boolean vpn, boolean share, boolean recv) {
+        if (!((vpn || recv) && VpnService.prepare(this) != null)) {
+            ObhodVpnService.run(this, vpn, share, recv);
             update();
             return;
         }
-        // Нужно разрешение (VPN, Wi-Fi Direct) или включить Wi-Fi — это делает экран приложения.
-        Intent i = StartActivity.intent(this, vpn, share).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // Нужно разрешение на VPN — его спрашивает экран приложения.
+        Intent i = StartActivity.intent(this, vpn, share, recv).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         if (Build.VERSION.SDK_INT >= 34) {
             startActivityAndCollapse(PendingIntent.getActivity(this, 3, i,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));

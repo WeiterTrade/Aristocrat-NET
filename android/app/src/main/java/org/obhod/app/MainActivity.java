@@ -127,13 +127,14 @@ public class MainActivity extends Activity {
 
     private void render() {
         String st = ObhodVpnService.state;
-        boolean shareOnly = ObhodVpnService.active() && !ObhodVpnService.runVpn;
+        boolean shareOnly = ObhodVpnService.active() && !ObhodVpnService.runVpn; // раздача или приём без обхода
         if (shareOnly) st = "off"; // обход выключен, работает только раздача
         boolean on = "on".equals(st);
         boolean starting = "starting".equals(st);
-        if (ObhodVpnService.shareActive()) {
-            shareBtn.setText(ObhodVpnService.shareSsid.isEmpty() ? getString(R.string.share_btn_starting)
-                    : getString(R.string.share_btn_on) + (ObhodVpnService.runVpn ? " (с обходом)" : ""));
+        if (ObhodVpnService.recvActive()) {
+            shareBtn.setText(R.string.share_btn_recv);
+        } else if (ObhodVpnService.shareActive()) {
+            shareBtn.setText(getString(R.string.share_btn_on) + (ObhodVpnService.runVpn ? " (с обходом)" : ""));
         } else {
             shareBtn.setText(R.string.share_btn);
         }

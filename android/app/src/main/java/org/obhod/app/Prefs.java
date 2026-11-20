@@ -58,26 +58,15 @@ final class Prefs {
 
     static String custom(Context c) { return get(c).getString("custom", ""); }
 
-    /** Пароль сети раздачи Wi-Fi (создаётся один раз, чтобы устройства его запомнили). */
-    static synchronized String sharePass(Context c) {
-        String p = get(c).getString("share_pass", "");
-        if (p.length() >= 8) return p;
-        String abc = "abcdefghjkmnpqrstuvwxyz23456789";
-        java.security.SecureRandom r = new java.security.SecureRandom();
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 10; i++) sb.append(abc.charAt(r.nextInt(abc.length())));
-        p = sb.toString();
-        get(c).edit().putString("share_pass", p).apply();
-        return p;
-    }
-
     /** Последний выбранный режим (для перезапуска службы системой): обход и/или раздача. */
     static boolean lastVpn(Context c) { return get(c).getBoolean("last_vpn", true); }
 
     static boolean lastShare(Context c) { return get(c).getBoolean("last_share", false); }
 
-    static void saveModes(Context c, boolean vpn, boolean share) {
-        get(c).edit().putBoolean("last_vpn", vpn).putBoolean("last_share", share).apply();
+    static boolean lastRecv(Context c) { return get(c).getBoolean("last_recv", false); }
+
+    static void saveModes(Context c, boolean vpn, boolean share, boolean recv) {
+        get(c).edit().putBoolean("last_vpn", vpn).putBoolean("last_share", share).putBoolean("last_recv", recv).apply();
     }
 
     /** Edward Version (особая сборка с маршрутом «Ебаная Чукотка»). */

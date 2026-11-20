@@ -25,70 +25,130 @@
             android:textColor="@color/gold_light"
             android:textSize="16sp" />
 
+        <!-- Раздать -->
         <LinearLayout
-            android:id="@+id/shareCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="14dp"
             android:background="@drawable/card"
             android:orientation="vertical"
             android:padding="14dp">
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/share_give_title"
+                android:textColor="@color/gold"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
                 android:id="@+id/shareInfo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:lineSpacingExtra="4dp"
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="3dp"
+                android:text="@string/share_give_hint"
                 android:textColor="@color/text"
                 android:textIsSelectable="true"
-                android:textSize="17sp" />
+                android:textSize="15sp" />
 
             <Button
-                android:id="@+id/sharePassCopy"
-                android:layout_width="wrap_content"
-                android:layout_height="44dp"
+                android:id="@+id/shareOnly"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/btn_primary"
+                android:focusable="true"
+                android:text="@string/mode_share"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/shareBoth"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/btn_primary"
+                android:focusable="true"
+                android:text="@string/mode_both"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/shareStop"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/btn_ghost"
                 android:focusable="true"
-                android:paddingStart="18dp"
-                android:paddingEnd="18dp"
-                android:text="@string/share_copy_pass"
+                android:text="@string/share_stop"
                 android:textAllCaps="false"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <!-- Принять -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/card"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/share_take_title"
+                android:textColor="@color/gold"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="3dp"
+                android:text="@string/share_take_hint"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/recvOn"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/btn_primary"
+                android:focusable="true"
+                android:text="@string/mode_recv"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/recvStop"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/btn_ghost"
+                android:focusable="true"
+                android:text="@string/recv_stop"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
         </LinearLayout>
 
         <Button
-            android:id="@+id/shareOnly"
+            android:id="@+id/addTile"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="16dp"
-            android:background="@drawable/btn_primary"
-            android:focusable="true"
-            android:text="@string/mode_share"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp" />
-
-        <Button
-            android:id="@+id/shareBoth"
-            android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/btn_primary"
-            android:focusable="true"
-            android:text="@string/mode_both"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp" />
-
-        <Button
-            android:id="@+id/shareStop"
-            android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="10dp"
+            android:layout_height="50dp"
+            android:layout_marginTop="14dp"
             android:background="@drawable/btn_ghost"
             android:focusable="true"
-            android:text="@string/share_stop"
+            android:text="@string/tile_add"
             android:textAllCaps="false"
             android:textColor="#FFFFFF"
             android:textSize="16sp" />
