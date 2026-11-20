@@ -58,6 +58,31 @@ final class Prefs {
 
     static String custom(Context c) { return get(c).getString("custom", ""); }
 
+    /** Пароль сети раздачи Wi-Fi (создаётся один раз, чтобы устройства его запомнили). */
+    static synchronized String sharePass(Context c) {
+        String p = get(c).getString("share_pass", "");
+        if (p.length() >= 8) return p;
+        String abc = "abcdefghjkmnpqrstuvwxyz23456789";
+        java.security.SecureRandom r = new java.security.SecureRandom();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 10; i++) sb.append(abc.charAt(r.nextInt(abc.length())));
+        p = sb.toString();
+        get(c).edit().putString("share_pass", p).apply();
+        return p;
+    }
+
+    /** Последний выбранный режим (для перезапуска службы системой): обход и/или раздача. */
+    static boolean lastVpn(Context c) { return get(c).getBoolean("last_vpn", true); }
+
+    static boolean lastShare(Context c) { return get(c).getBoolean("last_share", false); }
+
+    static void saveModes(Context c, boolean vpn, boolean share) {
+        get(c).edit().putBoolean("last_vpn", vpn).putBoolean("last_share", share).apply();
+    }
+
+    /** Edward Version (особая сборка с маршрутом «Ебаная Чукотка»). */
+    static boolean edward() { return "edward".equals(BuildConfig.EDITION); }
+
     private static java.util.Set<String> devRoutes;
 
     /**
@@ -67,6 +92,10 @@ final class Prefs {
     static synchronized java.util.Set<String> devRoutes(Context c) {
         if (devRoutes != null) return devRoutes;
         java.util.Set<String> out = new java.util.HashSet<>();
+        if (!edward()) { // сборка для всех пользователей: маршрута «Ебаная Чукотка» нет
+            devRoutes = out;
+            return out;
+        }
         try {
             java.io.File core = new java.io.File(c.getApplicationInfo().nativeLibraryDir, "libobhod.so");
             Process p = new ProcessBuilder(core.getAbsolutePath(), "-dev-available").redirectErrorStream(true).start();

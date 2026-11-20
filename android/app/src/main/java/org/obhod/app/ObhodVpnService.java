@@ -44,6 +44,9 @@ public class ObhodVpnService extends VpnService {
     public static final String ACTION_STOP = "org.obhod.app.STOP";
 
     static final int CORE_PORT = 8881;
+    static final int SHARE_PORT = 8282; // прокси для устройств в сети раздачи Wi-Fi
+    static final String EXTRA_VPN = "vpn";
+    static final String EXTRA_SHARE = "share";
     static final String TOR_SOCKS = "127.0.0.1:9077";
     // DNS устройства: запросы уходят в туннель, ядро отвечает настоящими адресами (шифрованный DNS).
     private static final String VPN_DNS = "1.1.1.1";
@@ -54,6 +57,11 @@ public class ObhodVpnService extends VpnService {
     static volatile String error = "";
     static volatile String torState = "";
     static volatile String warpState = "";
+    // Режим работы: обход блокировок (VPN) и/или раздача Wi-Fi.
+    static volatile boolean runVpn = true, runShare = false;
+    static volatile String shareState = "";   // для экрана: что с сетью раздачи
+    static volatile String shareSsid = "", sharePass = "", shareHost = "";
+    private WifiShare wifi;
     private static final ArrayDeque<String> LOG = new ArrayDeque<>();
 
     private ParcelFileDescriptor tun;
@@ -67,8 +75,18 @@ public class ObhodVpnService extends VpnService {
     private int torPhase = 0;                // этап автовыбора мостов: 0 — snowflake, 1 — obfs4/meek
     private File torCoreBin, torLyrebird, torData, torLogFile;
 
-    static void start(Context c) {
-        Intent i = new Intent(c, ObhodVpnService.class).setAction(ACTION_START);
+    static boolean active() {
+        return "on".equals(state) || "starting".equals(state);
+    }
+
+    /** Обход включён (VPN), а не только раздача. */
+    static boolean vpnActive() { return active() && runVpn; }
+
+    static boolean shareActive() { return active() && runShare; }
+
+    private static void startWith(Context c, boolean vpn, boolean share) {
+        Intent i = new Intent(c, ObhodVpnService.class).setAction(ACTION_START)
+                .putExtra(EXTRA_VPN, vpn).putExtra(EXTRA_SHARE, share);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             c.startForegroundService(i);
         } else {
@@ -76,12 +94,44 @@ public class ObhodVpnService extends VpnService {
         }
     }
 
-    /** Новые настройки применяются перезапуском службы. */
-    static void restartIfRunning(Context c) {
-        if (!"on".equals(state) && !"starting".equals(state)) return;
+    /**
+     * Включает нужный режим: обход блокировок (vpn), раздачу Wi-Fi (share) или оба.
+     * Оба false — выключить. Разрешения (VPN, Wi-Fi Direct) должны быть уже получены (см. StartActivity).
+     */
+    static void run(Context c, boolean vpn, boolean share) {
         final Context app = c.getApplicationContext();
+        Prefs.saveModes(app, vpn || !share, share);
+        if (!vpn && !share) {
+            if (active()) app.startService(new Intent(app, ObhodVpnService.class).setAction(ACTION_STOP));
+            return;
+        }
+        if (active()) {
+            if (vpn == runVpn && share == runShare) return;
+            app.startService(new Intent(app, ObhodVpnService.class).setAction(ACTION_STOP));
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> startWith(app, vpn, share), 1000);
+            return;
+        }
+        startWith(app, vpn, share);
+    }
+
+    /** Новые настройки применяются перезапуском службы (в том же режиме). */
+    static void restartIfRunning(Context c) {
+        if (!active()) return;
+        final Context app = c.getApplicationContext();
+        final boolean vpn = runVpn, share = runShare;
         app.startService(new Intent(app, ObhodVpnService.class).setAction(ACTION_STOP));
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> start(app), 1000);
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> startWith(app, vpn, share), 1000);
+    }
+
+    /** Обновить плитку в шторке. */
+    static void updateTile(Context c) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                android.service.quicksettings.TileService.requestListeningState(c,
+                        new ComponentName(c, AristocratTile.class));
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     static void log(String line) {
@@ -137,6 +187,18 @@ public class ObhodVpnService extends VpnService {
             stopSelf();
             return START_NOT_STICKY;
         }
+        if (!active()) {
+            if (intent != null && intent.hasExtra(EXTRA_VPN)) {
+                runVpn = intent.getBooleanExtra(EXTRA_VPN, true);
+                runShare = intent.getBooleanExtra(EXTRA_SHARE, false);
+            } else if (intent != null && SERVICE_INTERFACE.equals(intent.getAction())) {
+                runVpn = true; // «Постоянный VPN» включает система
+                runShare = false;
+            } else { // служба перезапущена системой — прежний режим
+                runVpn = Prefs.lastVpn(this);
+                runShare = Prefs.lastShare(this);
+            }
+        }
         startInForeground();
         if (worker == null || !worker.isAlive()) {
             worker = new Thread(this::startAll, "obhod-start");
@@ -174,7 +236,8 @@ public class ObhodVpnService extends VpnService {
         PendingIntent stop = PendingIntent.getService(this, 1,
                 new Intent(this, ObhodVpnService.class).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE);
         Notification n = b.setContentTitle(getString(R.string.app_name))
-                .setContentText(getString(R.string.notif_text))
+                .setContentText(notifText())
+                .setStyle(new Notification.BigTextStyle().bigText(notifText()))
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(open)
                 .setOngoing(true)
@@ -192,9 +255,21 @@ public class ObhodVpnService extends VpnService {
         }
     }
 
+    private String notifText() {
+        String share = shareSsid.isEmpty() ? "Раздача Wi-Fi: запускается…"
+                : "Раздача Wi-Fi: «" + shareSsid + "», пароль " + sharePass + ", прокси " + shareHost + ":" + SHARE_PORT;
+        if (runVpn && runShare) return getString(R.string.notif_text) + "\n" + share + " (с обходом)";
+        if (runShare) return share;
+        return getString(R.string.notif_text);
+    }
+
     private synchronized void startAll() {
         if ("on".equals(state)) return;
         state = "starting";
+        shareState = "";
+        shareSsid = sharePass = shareHost = "";
+        updateTile(this);
+        final boolean vpn = runVpn, share = runShare;
         error = "";
         torState = "";
         warpState = "";
@@ -208,8 +283,13 @@ public class ObhodVpnService extends VpnService {
             data.mkdirs();
             killStaleCore(data);
 
-            String route = Prefs.route(this);
-            boolean useTor = Prefs.needTor(this);
+            if (share) {
+                String miss = WifiShare.missingPermission(this);
+                if (miss != null) throw new IOException("для раздачи нужно разрешение «Устройства поблизости» (или «Местоположение»): откройте раздачу в приложении");
+                if (!WifiShare.wifiOn(this)) throw new IOException("для раздачи включите Wi-Fi (подключаться к сети не нужно)");
+            }
+            String route = vpn ? Prefs.route(this) : "dpi";
+            boolean useTor = vpn && Prefs.needTor(this);
             File torLog = new File(data, "tor.log");
 
             File geo = prepareGeo(data);
@@ -250,7 +330,12 @@ public class ObhodVpnService extends VpnService {
             cmd.add("-keep-local");
             cmd.add(Prefs.keepLocal(this) ? "on" : "off");
             cmd.add("-geo-tor");
-            cmd.add(Prefs.geoTor(this) ? "on" : "off");
+            cmd.add(vpn && Prefs.geoTor(this) ? "on" : "off");
+            if (!vpn) cmd.add("-plain"); // только раздача: без обхода блокировок
+            if (share) {
+                cmd.add("-share-listen");
+                cmd.add("0.0.0.0:" + SHARE_PORT);
+            }
             ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true).directory(data);
             Map<String, String> env = pb.environment();
             env.put("SSL_CERT_DIR", "/system/etc/security/cacerts");
@@ -259,6 +344,14 @@ public class ObhodVpnService extends VpnService {
             pump(core.getInputStream());
             if (!waitPort(CORE_PORT, 8000)) {
                 throw new IOException("ядро не запустилось — смотрите журнал");
+            }
+
+            if (share) startWifi(vpn);
+            if (!vpn) {
+                state = "on";
+                log("Раздача Wi-Fi запущена (без обхода блокировок)");
+                updateTile(this);
+                return;
             }
 
             // 3. VPN-интерфейс.
@@ -309,12 +402,46 @@ public class ObhodVpnService extends VpnService {
 
             state = "on";
             log("VPN включён");
+            updateTile(this);
         } catch (Exception e) {
             error = e.getMessage() == null ? e.toString() : e.getMessage();
             log("Ошибка: " + error);
             state = "error";
             cleanup();
+            updateTile(this);
         }
+    }
+
+    /** Сеть Wi-Fi Direct для раздачи. Не создалась: без обхода — ошибка, с обходом — обход работает дальше. */
+    private void startWifi(final boolean vpn) {
+        shareState = "Создаю сеть Wi-Fi…";
+        wifi = new WifiShare(this);
+        wifi.start(new WifiShare.Callback() {
+            @Override
+            public void ready(String ssid, String pass, String host) {
+                shareSsid = ssid;
+                sharePass = pass == null ? "" : pass;
+                shareHost = host;
+                shareState = "Раздача работает";
+                log("Раздача Wi-Fi: сеть «" + ssid + "», прокси " + host + ":" + SHARE_PORT);
+                startInForeground(); // в уведомлении — имя сети и пароль
+            }
+
+            @Override
+            public void failed(String why) {
+                shareState = "Раздача не запущена: " + why;
+                log(shareState);
+                if (!vpn) {
+                    new Thread(() -> {
+                        stopAll();
+                        error = why;
+                        state = "error";
+                        updateTile(ObhodVpnService.this);
+                        stopSelf();
+                    }, "obhod-share-fail").start();
+                }
+            }
+        });
     }
 
     /** Файлы GeoIP: ядру — чтобы узнавать российские и казахстанские сайты, tor — для выбора страны. */
@@ -462,7 +589,9 @@ public class ObhodVpnService extends VpnService {
         state = "off";
         torState = "";
         warpState = "";
+        shareState = "";
         log("VPN выключен");
+        updateTile(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
         } else {
@@ -471,6 +600,11 @@ public class ObhodVpnService extends VpnService {
     }
 
     private void cleanup() {
+        if (wifi != null) {
+            wifi.stop();
+            wifi = null;
+        }
+        shareSsid = sharePass = shareHost = "";
         stopTransports();
         try {
             TProxyService.TProxyStopService();

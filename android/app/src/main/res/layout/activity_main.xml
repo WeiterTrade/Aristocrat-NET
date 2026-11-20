@@ -106,6 +106,22 @@
             android:paddingBottom="9dp"
             android:textColor="@color/text"
             android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/shareBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/link_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingStart="18dp"
+            android:paddingTop="9dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="9dp"
+            android:text="@string/share_btn"
+            android:textColor="@color/gold_light"
+            android:textSize="16sp" />
     </LinearLayout>
 
     <Button
@@ -130,6 +146,7 @@
         android:gravity="center_vertical"
         android:paddingEnd="6dp"
         android:text="Edward Version"
+        android:visibility="gone"
         android:textColor="#3DDC84"
         android:textSize="18sp"
         android:textStyle="bold" />

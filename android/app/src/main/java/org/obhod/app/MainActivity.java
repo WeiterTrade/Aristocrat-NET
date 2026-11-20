@@ -29,7 +29,7 @@ public class MainActivity extends Activity {
     private static final int REQ_VPN = 1;
 
     private Button power;
-    private TextView status, torStatus, ip;
+    private TextView status, torStatus, ip, shareBtn;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private String lastState = "";
     private long lastIpAt = 0;
@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         setContentView(R.layout.activity_main);
+        if (Prefs.edward()) findViewById(R.id.edition).setVisibility(android.view.View.VISIBLE);
         power = findViewById(R.id.power);
         status = findViewById(R.id.status);
         torStatus = findViewById(R.id.torStatus);
@@ -54,6 +55,8 @@ public class MainActivity extends Activity {
         power.setOnClickListener(v -> toggle());
         findViewById(R.id.gear).setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
         findViewById(R.id.about).setOnClickListener(v -> showAbout());
+        shareBtn = findViewById(R.id.shareBtn);
+        shareBtn.setOnClickListener(v -> startActivity(new Intent(this, ShareActivity.class)));
         power.requestFocus();
 
         if (Build.VERSION.SDK_INT >= 33
@@ -99,9 +102,12 @@ public class MainActivity extends Activity {
             ver = " " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
         }
-        java.util.Set<String> dr = Prefs.devRoutes(this);
-        String text = getString(R.string.about_text)
-                + "\n\n«" + getString(R.string.route_moscow) + "»: " + (dr.contains("moscow") ? "есть в этой сборке" : "нет (не задан код DEV_DIRECT)");
+        String text = getString(R.string.about_text);
+        if (Prefs.edward()) {
+            java.util.Set<String> dr = Prefs.devRoutes(this);
+            text += "\n\nEdward Version\n«" + getString(R.string.route_moscow) + "»: "
+                    + (dr.contains("moscow") ? "есть в этой сборке" : "нет (не задан код DEV_DIRECT)");
+        }
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_name) + ver)
                 .setMessage(text)
@@ -109,35 +115,28 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    /** Большая кнопка — обход блокировок; раздача Wi-Fi (если включена) при этом сохраняется. */
     private void toggle() {
-        String st = ObhodVpnService.state;
-        if ("on".equals(st) || "starting".equals(st)) {
-            startService(new Intent(this, ObhodVpnService.class).setAction(ObhodVpnService.ACTION_STOP));
+        boolean share = ObhodVpnService.shareActive();
+        if (ObhodVpnService.vpnActive()) {
+            ObhodVpnService.run(this, false, share);
             return;
         }
-        Intent prepare = VpnService.prepare(this);
-        if (prepare != null) {
-            startActivityForResult(prepare, REQ_VPN);
-        } else {
-            onActivityResult(REQ_VPN, RESULT_OK, null);
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQ_VPN) return;
-        if (resultCode == RESULT_OK) {
-            ObhodVpnService.start(this);
-        } else {
-            Toast.makeText(this, "Без разрешения на VPN работа невозможна", Toast.LENGTH_LONG).show();
-        }
+        startActivity(StartActivity.intent(this, true, share));
     }
 
     private void render() {
         String st = ObhodVpnService.state;
+        boolean shareOnly = ObhodVpnService.active() && !ObhodVpnService.runVpn;
+        if (shareOnly) st = "off"; // обход выключен, работает только раздача
         boolean on = "on".equals(st);
         boolean starting = "starting".equals(st);
+        if (ObhodVpnService.shareActive()) {
+            shareBtn.setText(ObhodVpnService.shareSsid.isEmpty() ? getString(R.string.share_btn_starting)
+                    : getString(R.string.share_btn_on) + (ObhodVpnService.runVpn ? " (с обходом)" : ""));
+        } else {
+            shareBtn.setText(R.string.share_btn);
+        }
         if (!st.equals(lastState)) {
             power.setBackgroundResource(on ? R.drawable.power_on : R.drawable.power_off);
             lastState = st;

@@ -5,6 +5,9 @@ plugins {
 // Версия задаётся из CI: -PappVersion=1.2.3 -PappVersionCode=42
 def appVersion = project.findProperty('appVersion') ?: '0.3.0'
 def appVersionCode = (project.findProperty('appVersionCode') ?: '1').toInteger()
+// Выпуск: '' — для всех пользователей, 'edward' — Edward Version (подпись на главном экране,
+// маршрут «Ебаная Чукотка» — он вшит в ядро libobhod.so только этой сборки).
+def edition = project.findProperty('edition') ?: ''
 
 // Подпись: если в CI заданы секреты — release-ключом, иначе debug-ключом (APK всё равно устанавливается).
 def ksFile = System.getenv('ANDROID_KEYSTORE_FILE')
@@ -21,6 +24,7 @@ android {
         targetSdk 34
         versionCode appVersionCode
         versionName appVersion
+        buildConfigField 'String', 'EDITION', "\"${edition}\""
         // Архитектуры задаются в splits ниже (abiFilters здесь вызвал бы конфликт).
     }
 

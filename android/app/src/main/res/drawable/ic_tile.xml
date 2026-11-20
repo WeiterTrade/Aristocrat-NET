@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Плитка в шторке: щит (одноцветная, система сама красит её) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2L4,5v6c0,5.25 3.4,9.9 8,11c4.6,-1.1 8,-5.75 8,-11V5L12,2zM10.5,16.2l-3.7,-3.7l1.4,-1.4l2.3,2.3l5.3,-5.3l1.4,1.4L10.5,16.2z" />
+</vector>

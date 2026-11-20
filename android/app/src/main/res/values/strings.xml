@@ -137,4 +137,29 @@
         <item>custom</item>
         <item>none</item>
     </string-array>
+
+    <!-- Шторка и раздача Wi-Fi -->
+    <string name="tile_off">Выключено</string>
+    <string name="tile_vpn">Обход блокировок</string>
+    <string name="tile_share">Раздача Wi-Fi</string>
+    <string name="tile_both">Раздача + обход</string>
+    <string name="mode_vpn">Обход блокировок (шифрование)</string>
+    <string name="mode_share">Раздача Wi-Fi</string>
+    <string name="mode_both">Раздача Wi-Fi с обходом блокировок</string>
+    <string name="share_btn">📶 Раздача Wi-Fi</string>
+    <string name="share_btn_starting">📶 Раздача: запускается…</string>
+    <string name="share_btn_on">📶 Раздача работает</string>
+    <string name="share_title">Раздача Wi-Fi</string>
+    <string name="share_off">Раздача выключена</string>
+    <string name="share_starting">Создаю сеть Wi-Fi…</string>
+    <string name="share_on_plain">Раздача работает (без обхода блокировок)</string>
+    <string name="share_on_both">Раздача работает, интернет — с обходом блокировок</string>
+    <string name="share_stop">Выключить раздачу</string>
+    <string name="share_copy_pass">Копировать пароль</string>
+    <string name="share_pass_copied">Пароль скопирован</string>
+    <string name="share_unsupported">Это устройство не поддерживает Wi-Fi Direct — раздача невозможна</string>
+    <string name="share_need_perm">Без разрешения раздача Wi-Fi невозможна</string>
+    <string name="share_need_wifi">Включите Wi-Fi (подключаться к сети не нужно) и повторите</string>
+    <string name="vpn_need_perm">Без разрешения на VPN обход блокировок невозможен</string>
+    <string name="share_help">Телефон создаёт свою сеть Wi-Fi. Все сайты открывает сам телефон, поэтому оператор видит обычный трафик телефона, а не раздачу. Мобильный интернет продолжает работать, к другой сети Wi-Fi телефон подключать не нужно.\n\nКак подключить устройство (приложение на нём не нужно):\n1. Выберите сеть из карточки выше и введите пароль.\n2. В настройках этой сети укажите прокси «Вручную»: адрес и порт из карточки. Или «Автоматически» — ссылку автонастройки.\n• Android и Android TV: Wi-Fi → сеть → Дополнительно → Прокси.\n• iPhone и iPad: Wi-Fi → (i) у сети → Настройка прокси.\n• Windows: Параметры → Сеть → Прокси → Вручную.\n3. Проверка: откройте в браузере адрес прокси (http://192.168.49.1:8282) — должно быть «раздача работает».\n\nОграничения: телевизоры Samsung и LG не умеют прокси. Работают приложения, которые используют прокси системы (браузеры, YouTube, большинство приложений); некоторые игры и звонки — нет. Телефон должен оставаться рядом (Wi-Fi Direct — около 20–50 м).</string>
 </resources>

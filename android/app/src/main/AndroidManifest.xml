@@ -9,6 +9,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Раздача Wi-Fi (Wi-Fi Direct): Android 13+ — «Устройства поблизости», раньше — местоположение -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="33" />
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32" />
+    <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
 
     <!-- Список приложений для «мимо Обхода» (Android 11+ показывает только объявленные) -->
     <queries>
@@ -64,6 +74,32 @@
             android:exported="false"
             android:label="@string/settings"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".ShareActivity"
+            android:exported="false"
+            android:label="@string/share_title"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- Невидимый экран: разрешения (VPN, Wi-Fi Direct) и запуск режима из шторки -->
+        <activity
+            android:name=".StartActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Плитка в шторке: обход, раздача Wi-Fi или оба -->
+        <service
+            android:name=".AristocratTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- Tor работает в отдельном процессе: если он упадёт (например, из-за моста),
              приложение и VPN продолжат работать. -->
