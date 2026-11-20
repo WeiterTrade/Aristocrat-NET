@@ -126,8 +126,12 @@ jobs:
       - name: Сборка Obhod.exe (x86, работает на Windows 7–11 x86/x64)
         working-directory: core
         run: |
+          # Для всех пользователей — без маршрута «Ебаная Чукотка».
           CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -trimpath \
-            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devDirectCode=$DEVDIRECT" -o ../build/win/Obhod.exe .
+            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V" -o ../build/win/Obhod.exe .
+          # Edward Version — с маршрутом «Ебаная Чукотка» (код из секрета DEV_DIRECT).
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -trimpath \
+            -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.edition=edward -X main.devDirectCode=$DEVDIRECT" -o ../build/win/ObhodEdward.exe .
           # Сборка разработчика: раздача интернета, пароль — только хэш из секрета DEV_PASSWORD.
           CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags dev -trimpath \
             -ldflags "-s -w -H=windowsgui -X main.appVersion=$V -X main.devPassHash=$DEVHASH -X main.devDirectCode=$DEVDIRECT" -o ../build/win/ObhodDev.exe .
@@ -153,10 +157,17 @@ jobs:
           cp build/win/Obhod.exe build/win/README.txt build/portable/AristocratNET/
           cp -r build/win/tor-legacy build/portable/AristocratNET/tor
           (cd build/portable && zip -qr "../../dist/AristocratNET-Portable-$V-windows.zip" AristocratNET)
+          mkdir -p dist-edward
+          cp build/win/ObhodEdward.exe build/portable/AristocratNET/Obhod.exe
+          (cd build/portable && zip -qr "../../dist-edward/AristocratNET-Edward-Portable-$V-windows.zip" AristocratNET)
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edward-windows
+          path: dist-edward/*
 
   # Установщик — Inno Setup (окно установки как у современных программ Windows), собирается на Windows.
   windows-setup:
@@ -181,15 +192,23 @@ jobs:
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          New-Item -ItemType Directory -Force dist, dist-dev | Out-Null
-          # Для разработчика — та же папка, но Obhod.exe из сборки разработчика.
+          New-Item -ItemType Directory -Force dist, dist-dev, dist-edward | Out-Null
+          # Для разработчика и Edward Version — та же папка, но другой Obhod.exe.
           Copy-Item -Recurse build/win build/win-dev
           Move-Item -Force build/win-dev/ObhodDev.exe build/win-dev/Obhod.exe
-          Remove-Item build/win/ObhodDev.exe
+          Remove-Item build/win-dev/ObhodEdward.exe
+          Copy-Item -Recurse build/win build/win-edward
+          Move-Item -Force build/win-edward/ObhodEdward.exe build/win-edward/Obhod.exe
+          Remove-Item build/win-edward/ObhodDev.exe
+          Remove-Item build/win/ObhodDev.exe, build/win/ObhodEdward.exe
           $src = (Resolve-Path build/win).Path
           & $iscc /Q "/DVERSION=$env:V" "/DVIVERSION=$env:WV" "/DSRC=$src" packaging/windows/obhod.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Move-Item packaging/windows/AristocratNET-Setup-*.exe dist/
+          $src = (Resolve-Path build/win-edward).Path
+          & $iscc /Q "/DVERSION=$env:V" "/DVIVERSION=$env:WV" "/DSRC=$src" /DEDWARD=1 packaging/windows/obhod.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item packaging/windows/AristocratNET-Edward-Setup-*.exe dist-edward/
           $src = (Resolve-Path build/win-dev).Path
           & $iscc /Q "/DVERSION=$env:V" "/DVIVERSION=$env:WV" "/DSRC=$src" /DDEV=1 packaging/windows/obhod.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -198,6 +217,10 @@ jobs:
         with:
           name: windows-setup
           path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edward-windows-setup
+          path: dist-edward/*
       # Сборка разработчика — только среди файлов запуска (Actions), в релиз не попадает.
       - uses: actions/upload-artifact@v4
         with:
@@ -236,7 +259,9 @@ jobs:
         working-directory: core
         run: |
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags gui -trimpath \
-            -ldflags "-s -w -X main.appVersion=$V -X main.devDirectCode=$DEVDIRECT" -o ../build/linux/obhod .
+            -ldflags "-s -w -X main.appVersion=$V" -o ../build/linux/obhod .
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags gui -trimpath \
+            -ldflags "-s -w -X main.appVersion=$V -X main.edition=edward -X main.devDirectCode=$DEVDIRECT" -o ../build/obhod-edward .
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags "gui dev" -trimpath \
             -ldflags "-s -w -X main.appVersion=$V -X main.devPassHash=$DEVHASH -X main.devDirectCode=$DEVDIRECT" -o ../build/obhod-dev .
       - name: Tor для Linux
@@ -253,6 +278,12 @@ jobs:
           VERSION="$V" nfpm package -f packaging/linux/nfpm.yaml -p rpm -t dist/
           tar czf "dist/obhod-$V-linux-amd64.tar.gz" -C build/linux obhod tor
           ls -la dist
+          # Edward Version (DEB): тот же пакет, но программа — Edward Version.
+          mkdir -p dist-edward
+          cp build/obhod-edward build/linux/obhod
+          VERSION="$V" nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist-edward/
+          for f in dist-edward/*.deb; do mv "$f" "dist-edward/AristocratNET-Edward-$V-linux-amd64.deb"; done
+          tar czf "dist-edward/obhod-edward-$V-linux-amd64.tar.gz" -C build/linux obhod tor
           # Сборка разработчика (DEB): тот же пакет, но программа — из сборки разработчика.
           mkdir -p dist-dev
           cp build/obhod-dev build/linux/obhod
@@ -262,6 +293,10 @@ jobs:
         with:
           name: linux
           path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edward-linux
+          path: dist-edward/*
       - uses: actions/upload-artifact@v4
         with:
           name: _dev-linux
@@ -330,14 +365,29 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          mkdir -p dist dist-edward
+          # 1) Для всех пользователей: ядро без маршрута «Ебаная Чукотка», без подписи Edward Version.
           gradle -p android --no-daemon assembleRelease -PappVersion="$V" -PappVersionCode="$CODE"
-          mkdir -p dist
           for f in android/app/build/outputs/apk/release/*.apk; do
             abi=$(basename "$f" .apk | sed -E 's/^app-//; s/-release(-unsigned)?$//')
             cp "$f" "dist/AristocratNET-$V-android-$abi.apk"
           done
-          ls -la dist
+          # 2) Edward Version: ядро с кодом подключения и подпись на главном экране.
+          rm -rf android/app/build/outputs/apk
+          for d in build/android/edward/*/; do
+            cp "$d/libobhod.so" "android/app/src/main/jniLibs/$(basename "$d")/libobhod.so"
+          done
+          gradle -p android --no-daemon assembleRelease -PappVersion="$V" -PappVersionCode="$CODE" -Pedition=edward
+          for f in android/app/build/outputs/apk/release/*.apk; do
+            abi=$(basename "$f" .apk | sed -E 's/^app-//; s/-release(-unsigned)?$//')
+            cp "$f" "dist-edward/AristocratNET-Edward-$V-android-$abi.apk"
+          done
+          ls -la dist dist-edward
       - uses: actions/upload-artifact@v4
         with:
           name: android
           path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edward-android
+          path: dist-edward/*
