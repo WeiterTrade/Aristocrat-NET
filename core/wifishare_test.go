@@ -89,3 +89,79 @@ func mustURL(s string) *url.URL {
 	}
 	return u
 }
+
+// Приём интернета с телефона: UDP (звонки, DNS) второго устройства идёт через прокси телефона.
+func TestShareUDPForLanClient(t *testing.T) {
+	var lanIP net.IP
+	if ifs, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range ifs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && !n.IP.IsLoopback() {
+				lanIP = n.IP.To4()
+				break
+			}
+		}
+	}
+	if lanIP == nil {
+		t.Skip("нет сетевого адреса, кроме 127.0.0.1")
+	}
+	echo, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer echo.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			n, from, err := echo.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			echo.WriteTo(append([]byte("echo:"), buf[:n]...), from)
+		}
+	}()
+	e := NewEngine(NewResolver("cloudflare", t.Logf), t.Logf)
+	e.Plain.Store(true)
+	ln, err := net.Listen("tcp", net.JoinHostPort(lanIP.String(), "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() { // как ServeLAN, но без проверки адреса: в тестовой среде он может быть не «домашним»
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go e.handle(c)
+		}
+	}()
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.Write([]byte{5, 1, 0, 5, 3, 0, 1, 0, 0, 0, 0, 0, 0})
+	r := make([]byte, 12)
+	if _, err := io.ReadFull(c, r); err != nil || r[1] != 0 || r[3] != 0 {
+		t.Fatalf("UDP ASSOCIATE: %v %v", r, err)
+	}
+	relay := &net.UDPAddr{IP: net.IP(r[6:10]), Port: int(r[10])<<8 | int(r[11])}
+	if !relay.IP.Equal(lanIP) {
+		t.Fatalf("адрес для UDP %v, нужен адрес телефона %v", relay.IP, lanIP)
+	}
+	u, err := net.DialUDP("udp", &net.UDPAddr{IP: lanIP}, relay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer u.Close()
+	ep := echo.LocalAddr().(*net.UDPAddr)
+	pkt := append([]byte{0, 0, 0, 1, 127, 0, 0, 1, byte(ep.Port >> 8), byte(ep.Port)}, "ping"...)
+	u.Write(pkt)
+	u.SetReadDeadline(time.Now().Add(3 * time.Second))
+	buf := make([]byte, 2048)
+	n, err := u.Read(buf)
+	if err != nil || !strings.HasSuffix(string(buf[:n]), "echo:ping") {
+		t.Fatalf("ответ UDP: %q %v", buf[:n], err)
+	}
+}

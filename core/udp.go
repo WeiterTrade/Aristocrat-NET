@@ -70,7 +70,16 @@ func udpPacket(from *net.UDPAddr, data []byte) []byte {
 
 func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 	fail := func() { _, _ = c.Write([]byte{5, 1, 0, 1, 0, 0, 0, 0, 0, 0}) }
-	lc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	// UDP принимаем на том же адресе, куда пришло TCP-соединение: 127.0.0.1 для своего VPN,
+	// адрес телефона в домашней сети — для устройств раздачи (приём интернета с телефона).
+	bindIP, peerIP := net.IPv4(127, 0, 0, 1), net.IP(nil)
+	if la, ok := c.LocalAddr().(*net.TCPAddr); ok && la.IP.To4() != nil && !la.IP.IsLoopback() {
+		bindIP = la.IP.To4()
+		if ra, ok := c.RemoteAddr().(*net.TCPAddr); ok {
+			peerIP = ra.IP
+		}
+	}
+	lc, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindIP})
 	if err != nil {
 		fail()
 		return
@@ -100,7 +109,8 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 	}
 
 	la := lc.LocalAddr().(*net.UDPAddr)
-	if _, err := c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, byte(la.Port >> 8), byte(la.Port)}); err != nil {
+	b4 := bindIP.To4()
+	if _, err := c.Write([]byte{5, 0, 0, 1, b4[0], b4[1], b4[2], b4[3], byte(la.Port >> 8), byte(la.Port)}); err != nil {
 		return
 	}
 
@@ -150,8 +160,8 @@ func (e *Engine) socksUDP(c net.Conn, br *bufio.Reader) {
 			if err != nil {
 				return
 			}
-			if !from.IP.IsLoopback() {
-				continue
+			if peerIP == nil && !from.IP.IsLoopback() || peerIP != nil && !from.IP.Equal(peerIP) {
+				continue // чужие пакеты
 			}
 			mu.Lock()
 			client = from
