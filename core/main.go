@@ -42,6 +42,18 @@ const appTitle = "Aristocrat NET"
 
 var appVersion = "0.11.0" // перезаписывается при сборке: -ldflags "-X main.appVersion=..."
 
+// edition — выпуск: "" — для всех пользователей, "edward" — Edward Version
+// (с маршрутом «Ебаная Чукотка»; задаётся при сборке: -X main.edition=edward).
+var edition = ""
+
+// versionLabel — версия для интерфейса (у Edward Version — с подписью).
+func versionLabel() string {
+	if edition == "edward" {
+		return appVersion + " · Edward Version"
+	}
+	return appVersion
+}
+
 const torSocksAddr = "127.0.0.1:9077"
 
 //go:embed ui/index.html
@@ -627,7 +639,7 @@ func (a *App) state() map[string]any {
 		"total":       a.eng.total.Load(),
 		"proxy_err":   a.proxyErr,
 		"os":          runtime.GOOS,
-		"version":     appVersion,
+		"version":     versionLabel(),
 	}
 }
 
@@ -931,6 +943,8 @@ func main() {
 		ptConfig   = flag.String("pt-config", "", "путь к pt_config.json")
 		lyrebird   = flag.String("lyrebird", "", "путь к lyrebird")
 		ptSocks    = flag.String("pt-socks", "", "запущенные транспорты Tor (Android): obfs4=127.0.0.1:port,webtunnel=…")
+		shareAddr  = flag.String("share-listen", "", "раздача Wi-Fi (Android): принимать устройства домашней сети на этом адресе, например 0.0.0.0:8282")
+		plain      = flag.Bool("plain", false, "без обхода блокировок: просто прокси (раздача без шифрования)")
 		version    = flag.Bool("version", false, "версия")
 		minimized  = flag.Bool("minimized", false, "запуститься свёрнутым в трей")
 	)
@@ -1081,8 +1095,21 @@ func main() {
 		_ = os.MkdirAll(a.dir, 0o700)
 		_ = os.WriteFile(pidFile, []byte(fmt.Sprint(os.Getpid())), 0o600)
 		defer os.Remove(pidFile)
+		a.eng.Plain.Store(*plain)
 		if err := a.eng.Start(a.s.Port); err != nil {
 			log.Fatal(err)
+		}
+		if *shareAddr != "" {
+			ln, err := net.Listen("tcp", *shareAddr)
+			if err != nil {
+				log.Fatalf("раздача: порт %s занят: %v", *shareAddr, err)
+			}
+			a.eng.ServeLAN(ln)
+			if *plain {
+				a.logf("Раздача: прокси на %s (без обхода блокировок)", *shareAddr)
+			} else {
+				a.logf("Раздача: прокси на %s (с обходом блокировок)", *shareAddr)
+			}
 		}
 		a.startUpstreams(true)
 		if *torLog != "" && a.torSocks != "" {

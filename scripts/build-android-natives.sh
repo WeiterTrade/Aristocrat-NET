@@ -5,6 +5,8 @@
 #   libhev-socks5-tunnel.so — tun2socks (C, NDK)
 # Нужны: Go, Android NDK (ANDROID_NDK_HOME или ANDROID_NDK_LATEST_HOME), git.
 # Использование: scripts/build-android-natives.sh <версия>
+# Ядро собирается дважды: для всех пользователей (в jniLibs) и для Edward Version
+# (в $WORK/edward/<abi>/libobhod.so — CI подкладывает его перед сборкой второго APK).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSION="${1:-$(cat "$ROOT/VERSION")}"
@@ -55,9 +57,14 @@ for abi in armeabi-v7a arm64-v8a x86 x86_64; do
     x86_64)      GA=amd64 CC="$TC/x86_64-linux-android$API-clang" ;;
   esac
   mkdir -p "$JNI/$abi"
-  echo "==> $abi: ядро"
+  echo "==> $abi: ядро (для всех пользователей)"
   (cd "$ROOT/core" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" \
-     go build -trimpath -ldflags "$LDX -X main.appVersion=$VERSION -X main.devDirectCode=${DEVDIRECT:-}" -o "$JNI/$abi/libobhod.so" .)
+     go build -trimpath -ldflags "$LDX -X main.appVersion=$VERSION" -o "$JNI/$abi/libobhod.so" .)
+  # Edward Version: то же ядро с кодом подключения «Ебаная Чукотка» (секрет DEV_DIRECT).
+  echo "==> $abi: ядро (Edward Version)"
+  mkdir -p "$WORK/edward/$abi"
+  (cd "$ROOT/core" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" \
+     go build -trimpath -ldflags "$LDX -X main.appVersion=$VERSION -X main.devDirectCode=${DEVDIRECT:-}" -o "$WORK/edward/$abi/libobhod.so" .)
   if [ -n "$LYRE" ]; then
     echo "==> $abi: lyrebird"
     (cd "$LYRE" && CGO_ENABLED=1 GOOS=android GOARCH=$GA GOARM=7 CC="$CC" GOFLAGS=-mod=mod \

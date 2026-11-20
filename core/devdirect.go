@@ -51,7 +51,12 @@ func parseDirectCode(code string) (directCode, bool) {
 	return directCode{host: f[1], port: port, fp: strings.ToLower(f[3]), token: strings.ToLower(f[4])}, true
 }
 
-func directAvailable() bool { _, ok := parseDirectCode(devDirectCode); return ok }
+// directAvailable — в сборке есть маршрут «Ебаная Чукотка»: только Edward Version и сборки
+// разработчика (в сборке для всех пользователей его нет, даже если код случайно вшит).
+func directAvailable() bool {
+	_, ok := parseDirectCode(devDirectCode)
+	return ok && (edition == "edward" || devBuild)
+}
 
 func init() {
 	if directAvailable() {
@@ -62,7 +67,7 @@ func init() {
 // NewDirectLink — путь через сервер с белым IP (nil — в сборке нет кода).
 func NewDirectLink(dir string, logf func(string, ...any)) *DevLink {
 	dc, ok := parseDirectCode(devDirectCode)
-	if !ok {
+	if !ok || !directAvailable() {
 		return nil
 	}
 	cfg := &tls.Config{

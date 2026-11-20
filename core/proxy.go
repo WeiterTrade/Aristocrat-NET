@@ -31,6 +31,7 @@ type Engine struct {
 	Share     *ShareAuth    // раздача (сборка разработчика): вход по логину SOCKS5, учёт клиентов
 	names     dnsNames      // адрес → имя сайта (по ответам нашего DNS, см. dnsserver.go)
 	BlockQUIC bool          // не пропускать UDP/443: браузеры и приложения переходят на TCP, где работает обход DPI
+	Plain     atomic.Bool   // без обхода: просто прокси (раздача Wi-Fi без шифрования, Android)
 	Timeout   time.Duration // ожидание ответа сервера на каждый метод
 	TorWait   time.Duration // сколько ждать подключения Tor при фолбэке
 
@@ -197,6 +198,9 @@ func (e *Engine) warpOn() bool { return e.Warp != nil && e.Warp.Enabled() }
 // upstreams — запасные пути по порядку для текущего режима.
 func (e *Engine) upstreams() []Upstream {
 	var out []Upstream
+	if e.Plain.Load() {
+		return nil
+	}
 	switch e.route() {
 	case RouteDPI:
 	case RouteMoscow:
@@ -250,6 +254,9 @@ func (e *Engine) upstreamByName(name string) Upstream {
 
 // viaFirst — путь, по которому идти сразу, не пытаясь напрямую (nil — напрямую).
 func (e *Engine) viaFirst(host string) (Upstream, error) {
+	if e.Plain.Load() {
+		return nil, nil
+	}
 	if strings.HasSuffix(host, ".onion") {
 		if e.torOn() {
 			return e.Tor, nil
@@ -411,6 +418,11 @@ func (e *Engine) handle(c net.Conn) {
 		}
 		_, _ = io.WriteString(c, "HTTP/1.1 200 Connection Established\r\n\r\n")
 		e.relay(c, br, host, port, nil, up, via)
+		return
+	}
+	// Запрос к самому прокси (раздача Wi-Fi): страница-подсказка и файл автонастройки.
+	if req.URL.Host == "" {
+		servePage(c, req)
 		return
 	}
 	// Обычный HTTP через прокси: переписываем запрос в обычную форму (origin-form).
@@ -766,10 +778,10 @@ func (e *Engine) relay(client net.Conn, br *bufio.Reader, host string, port int,
 	}
 	// Через WARP/Tor, протокол, где первым говорит сервер, или поток, по которому нельзя
 	// судить о блокировке, — просто соединяем.
-	if via != "" || !checkable(first) {
+	if via != "" || !checkable(first) || e.Plain.Load() {
 		if len(first) > 0 {
 			strat := StratNone
-			if via == "" {
+			if via == "" && !e.Plain.Load() {
 				strat = e.learnedDPI(host)
 			}
 			if err := SendFirst(pre, first, strat); err != nil {

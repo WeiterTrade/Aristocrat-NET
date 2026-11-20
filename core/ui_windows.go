@@ -1104,13 +1104,13 @@ func (u *nativeUI) drawHome(o *offscreen, b walk.Rectangle) {
 
 	// Шестерёнка
 	u.txt.draw(hdc, "⚙", u.txt.font("Segoe UI Symbol", int(23*s), false), cLight, u.rGear, dtCenter|dtVCenter|dtSingle)
-	u.txt.draw(hdc, "v"+appVersion, u.txt.font("Segoe UI", int(11*s), false), cOnSkySub,
+	u.txt.draw(hdc, "v"+versionLabel(), u.txt.font("Segoe UI", int(11*s), false), cOnSkySub,
 		walk.Rectangle{X: 0, Y: u.rGear.Y, Width: b.Width - int(16*s), Height: u.rGear.Height}, dtRight|dtVCenter|dtSingle)
 }
 
 func (u *nativeUI) paintAbout(hdc win.HDC, b walk.Rectangle, s float64) {
 	y := int(16*s) + int(210*s) + int(8*s)
-	u.txt.draw(hdc, "версия "+appVersion, u.txt.font("Segoe UI", int(13*s), false), cGoldLight,
+	u.txt.draw(hdc, "версия "+versionLabel(), u.txt.font("Segoe UI", int(13*s), false), cGoldLight,
 		walk.Rectangle{Y: y, Width: b.Width, Height: int(20 * s)}, dtCenter|dtSingle)
 	y += int(22 * s)
 	u.txt.draw(hdc, "Разработчик: Aristocrat (в своём кругу — Старый)", u.txt.font("Segoe UI Semibold", int(13*s), false), cGold,

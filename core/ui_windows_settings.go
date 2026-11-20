@@ -348,7 +348,7 @@ func (u *nativeUI) buildPage(id string) sPage {
 	items = append(items,
 		section("Другие"),
 		row("Журнал", "", "", u.open("logs")),
-		row("О программе", "", "v"+appVersion, func() { u.aboutFromSettings = true; u.setView(viewAbout) }),
+		row("О программе", "", "v"+versionLabel(), func() { u.aboutFromSettings = true; u.setView(viewAbout) }),
 		&sItem{kind: kRow, title: "Выход из программы", danger: true, act: func() {
 			if walk.MsgBox(u.mw, appTitle, "Выключить защиту и закрыть программу?", walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) == win.IDYES {
 				go u.quit()

@@ -16,9 +16,13 @@
 #endif
 #define ASSETS "..\..\assets"
 ; /DDEV=1 — установщик сборки разработчика (раздача интернета); ставится только на компьютер разработчика.
+; /DEDWARD=1 — установщик Edward Version (с маршрутом «Ебаная Чукотка»).
 #ifdef DEV
   #define SETUPNAME "AristocratNET-Dev-Setup"
   #define VERNAME "Aristocrat NET " + VERSION + " (разработчик)"
+#elif defined(EDWARD)
+  #define SETUPNAME "AristocratNET-Edward-Setup"
+  #define VERNAME "Aristocrat NET " + VERSION + " Edward Version"
 #else
   #define SETUPNAME "AristocratNET-Setup"
   #define VERNAME "Aristocrat NET " + VERSION
